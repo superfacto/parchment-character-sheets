@@ -331,6 +331,18 @@ function renderWidget(w, index, page) {
     if (s) node.append(el('div', { class: 'ws', text: `${s.label}: ${displayValue(s)}` }));
   }
 
+  // Proficiency dot (official-sheet style): a fillable circle wired to a boolean
+  // value. Tapping it in play mode toggles proficiency, which re-derives the mod.
+  if (play && w.profRef) {
+    const profV = valueById(w.profRef);
+    if (profV && profV.kind === 'bool') {
+      node.classList.add('has-prof');
+      const dot = el('button', { class: `profdot ${profV.value ? 'on' : ''}`, title: profV.value ? 'Proficient — tap to clear' : 'Not proficient — tap to add', 'aria-pressed': String(!!profV.value) });
+      dot.addEventListener('click', (e) => { e.stopPropagation(); profV.value = !profV.value; commit(); });
+      node.append(dot);
+    }
+  }
+
   if (tappable) {
     node.append(el('div', { class: 'marker', text: rolls.length ? '🎲' : 'ⓘ' }));
     node.classList.add('tappable');
@@ -355,6 +367,7 @@ function displayValue(v) {
   let out;
   if (v.kind === 'calc') { const r = computed.results.get(v.id); out = r === undefined ? 'ERR' : r; }
   else if (v.kind === 'text') return v.text || '—';
+  else if (v.kind === 'bool') return v.value ? 'Yes' : 'No';
   else out = v.value ?? 0;
   if (out === 'ERR') return 'ERR';
   if (v.signed && typeof out === 'number') return signedStr(out);
@@ -968,7 +981,7 @@ function openAddWidget(page) {
         const matches = c.values.filter((v) => (v.label + ' ' + v.id).toLowerCase().includes(query.toLowerCase()));
         matches.slice(0, 30).forEach((v) => list.append(el('button', {
           onclick: () => { page.widgets.push(newBoundWidget(v)); state.overlay = null; commit(); },
-        }, [el('span', { class: 'mi', text: v.kind === 'calc' ? 'ƒ' : v.kind === 'text' ? 'T' : '#' }), `${v.label}  `, el('span', { class: 'pill', text: v.id })])));
+        }, [el('span', { class: 'mi', text: v.kind === 'calc' ? 'ƒ' : v.kind === 'text' ? 'T' : v.kind === 'bool' ? '☑' : '#' }), `${v.label}  `, el('span', { class: 'pill', text: v.id })])));
         if (!matches.length) list.append(el('div', { class: 'empty', text: 'No values match.' }));
       };
       refreshList();
@@ -1017,6 +1030,12 @@ function openWidgetConfig(w, page) {
       refSel.value = w.ref || '';
       const secSel = valueOptions((id) => { w.secondaryRef = id; commit(); }, true);
       secSel.value = w.secondaryRef || '';
+      const boolVals = c.values.filter((x) => x.kind === 'bool');
+      const profSel = el('select', { onchange: (e) => { w.profRef = e.target.value || undefined; commit(); } }, [
+        el('option', { value: '', text: '— none —' }),
+        ...boolVals.map((x) => el('option', { value: x.id, text: `${x.label} (${x.id})` })),
+      ]);
+      profSel.value = w.profRef || '';
 
       return sheetCard([
         el('h2', { text: 'Configure widget' }),
@@ -1033,7 +1052,12 @@ function openWidgetConfig(w, page) {
             onclick: () => { w.editableInPlay = !w.editableInPlay; commit(); },
           }, el('span', { class: 'knob' })),
         ]),
-        el('div', { class: 'field', style: 'margin-top:14px' }, [
+        boolVals.length ? el('div', { class: 'field', style: 'margin-top:14px' }, [
+          el('label', { text: 'Proficiency dot (boolean value)' }),
+          profSel,
+          el('div', { class: 'hint', text: 'Shows a fillable ● on the card; tapping it toggles that boolean (e.g. save/skill proficiency).' }),
+        ]) : null,
+        el('div', { class: 'field', style: `margin-top:${boolVals.length ? 0 : 14}px` }, [
           el('label', { text: 'Roll override (else uses value’s own roll)' }),
           el('input', { placeholder: v?.roll ? `inherits: ${v.roll}` : 'e.g. 1d20 + str_mod', value: w.rollOverride || '', oninput: (e) => { w.rollOverride = e.target.value || undefined; store.save(state.save); } }),
           el('div', { class: 'hint', text: 'Adds a roll button in this card’s details. The value’s own rolls also appear.' }),
@@ -1091,11 +1115,18 @@ function openValueEditor(existing, onCreate) {
         ? el('input', { placeholder: 'lowercase_slug', value: idDraft, oninput: (e) => { idDraft = e.target.value; } })
         : el('input', { class: 'locked', value: v.id, readonly: true, title: 'Value ids are immutable — formulas reference them.' });
 
-      const kindSeg = el('div', { class: 'seg' }, ['number', 'text', 'calc'].map((k) => el('button', { class: v.kind === k ? 'on' : '', text: k, onclick: () => { v.kind = k; render(); } })));
+      const kindSeg = el('div', { class: 'seg' }, ['number', 'text', 'calc', 'bool'].map((k) => el('button', { class: v.kind === k ? 'on' : '', text: k, onclick: () => { v.kind = k; render(); } })));
 
       const kindFields = el('div');
       if (v.kind === 'number') kindFields.append(field('Value', el('input', { type: 'number', value: v.value ?? 0, oninput: (e) => { v.value = Number(e.target.value); } })));
       if (v.kind === 'text') kindFields.append(field('Text', el('input', { value: v.text || '', oninput: (e) => { v.text = e.target.value; } })));
+      if (v.kind === 'bool') kindFields.append(el('div', { class: 'toggle-row', style: 'margin-top:2px' }, [
+        el('div', {}, [
+          el('div', { class: 'theme-nm', text: 'Default state' }),
+          el('div', { class: 'desc', style: 'margin:0', text: 'A checkbox/dot value. Reads as 1 (on) or 0 (off) inside formulas — e.g. proficient × proficiency_bonus.' }),
+        ]),
+        el('button', { class: `switch ${v.value ? 'on' : ''}`, role: 'switch', 'aria-checked': String(!!v.value), onclick: () => { v.value = !v.value; render(); } }, el('span', { class: 'knob' })),
+      ]));
       if (v.kind === 'calc') {
         // Build the formula field by hand so keystrokes update only the ERR hint
         // (not a full re-render, which would destroy the input and drop focus).
@@ -1133,10 +1164,11 @@ function openValueEditor(existing, onCreate) {
       ]);
 
       function saveValue() {
-        // normalise empties
-        if (v.kind !== 'number') v.value = undefined;
-        if (v.kind !== 'text') v.text = v.kind === 'text' ? v.text : undefined;
-        if (v.kind !== 'calc') v.formula = undefined;
+        // normalise fields to the chosen kind
+        if (v.kind === 'number') { v.value = Number(v.value) || 0; v.text = undefined; v.formula = undefined; }
+        else if (v.kind === 'bool') { v.value = !!v.value; v.text = undefined; v.formula = undefined; }
+        else if (v.kind === 'text') { v.value = undefined; v.formula = undefined; }
+        else if (v.kind === 'calc') { v.value = undefined; v.text = undefined; }
         delete v.roll; // standardise on the rolls[] array
         v.rolls = (v.rolls || []).filter((r) => r && r.expr && r.expr.trim())
           .map((r) => ({ name: (r.name || '').trim(), expr: r.expr.trim() }));
@@ -1302,8 +1334,40 @@ function migrateSave(save) {
   save.layoutScale = 4;
 }
 
+// Retrofit proficiency onto pre-existing 5e characters: any calc value whose
+// formula is exactly a raw ability mod (`str_mod`, `dex_mod`, …) gains a boolean
+// `<id>_prof` leaf and `mod + <id>_prof * proficiency_bonus`; widgets bound to it
+// get a `profRef`. Purely additive and pattern-matched — leaves edited formulas
+// untouched. Runs once (guarded by save.profUpgrade).
+function upgradeProficiency(save) {
+  if (save.profUpgrade) return;
+  const RAW = /^\s*(str|dex|con|int|wis|cha)_mod\s*$/;
+  for (const c of save.characters || []) {
+    if (c.preset !== 'dnd5e') continue;
+    const has = new Set(c.values.map((v) => v.id));
+    if (!has.has('proficiency_bonus')) continue;
+    const upgraded = new Set();
+    for (const v of [...c.values]) {
+      if (v.kind !== 'calc') continue;
+      const m = RAW.exec(v.formula || '');
+      if (!m) continue;
+      const profId = `${v.id}_prof`;
+      if (has.has(profId)) continue;
+      c.values.push({ id: profId, label: `${v.label || v.id} Proficient`, kind: 'bool', value: false, group: v.group });
+      has.add(profId);
+      v.formula = `${m[1]}_mod + ${profId} * proficiency_bonus`;
+      upgraded.add(v.id);
+    }
+    for (const p of c.pages || []) for (const w of p.widgets || []) {
+      if (w.kind === 'bound' && upgraded.has(w.ref) && !w.profRef) w.profRef = `${w.ref}_prof`;
+    }
+  }
+  save.profUpgrade = true;
+}
+
 // --- boot ------------------------------------------------------------------
 migrateSave(state.save);
+upgradeProficiency(state.save);
 store.saveNow(state.save);
 applyTheme(state.theme);
 if (new URLSearchParams(location.search).get('sheet') && state.save.activeCharacterId) state.view = 'sheet';

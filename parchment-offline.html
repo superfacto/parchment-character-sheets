@@ -167,6 +167,12 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 .wdg .wv.text { font-size: 18px; font-weight: 550; }
 .wdg .ws { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .wdg .marker { position: absolute; top: 8px; right: 10px; font-size: 13px; color: var(--oxblood); }
+/* Proficiency dot (official-sheet style): hollow ring / filled when proficient. */
+.wdg.has-prof .wl { padding-left: 22px; }
+.wdg .profdot { position: absolute; top: 9px; left: 8px; width: 16px; height: 16px; padding: 0; border-radius: 50%; border: 2px solid var(--border); background: transparent; }
+.wdg .profdot.on { background: var(--oxblood); border-color: var(--oxblood); box-shadow: inset 0 0 0 2px var(--card); }
+.wdg .profdot:active { transform: scale(0.88); }
+.wdg .profdot::after { content: ""; position: absolute; inset: -11px; }   /* ~40px touch target */
 .wdg .wv.err { color: var(--oxblood); font-size: 20px; }
 .wdg.num input {
   width: 100%; border: 0; background: transparent; font-size: 30px; font-weight: 650;
@@ -747,9 +753,11 @@ function computeAll(values) {
   const details = new Map(); // id -> { formula?, error? , breakdown? }
   const compiled = new Map();
 
-  // Seed literal (number/text) values.
+  // Seed literal (number/bool/text) values. A boolean resolves to 1/0 so it can
+  // multiply into arithmetic (e.g. proficient * proficiency_bonus).
   for (const v of values) {
     if (v.kind === 'number') results.set(v.id, typeof v.value === 'number' ? v.value : 0);
+    else if (v.kind === 'bool') results.set(v.id, v.value ? 1 : 0);
     else if (v.kind === 'text') results.set(v.id, v.text ?? '');
   }
 
@@ -892,14 +900,17 @@ function dnd5eCharacter(name = 'New Hero') {
   values.push({ id: 'hp_current', label: 'HP', kind: 'number', value: 10, group: 'Combat' });
   values.push({ id: 'hp_max', label: 'Max HP', kind: 'number', value: 10, group: 'Combat' });
 
-  // Saving throws — raw ability mods (proficiency deferred).
+  // Saving throws — ability mod plus (proficient ? proficiency_bonus : 0).
+  // Each save carries a boolean "proficient" leaf the sheet toggles with a dot.
   for (const [, , ab] of ABILITIES) {
-    values.push({ id: `save_${ab}`, label: `${ab.toUpperCase()} Save`, kind: 'calc', formula: `${ab}_mod`, signed: true, group: 'Saves' });
+    values.push({ id: `save_${ab}_prof`, label: `${ab.toUpperCase()} Save Proficient`, kind: 'bool', value: false, group: 'Saves' });
+    values.push({ id: `save_${ab}`, label: `${ab.toUpperCase()} Save`, kind: 'calc', formula: `${ab}_mod + save_${ab}_prof * proficiency_bonus`, signed: true, group: 'Saves' });
   }
 
-  // Skills — raw ability mods.
+  // Skills — ability mod plus proficiency when the skill's dot is filled.
   for (const [id, label, ab] of SKILLS) {
-    values.push({ id, label, kind: 'calc', formula: `${ab}_mod`, signed: true, group: 'Skills' });
+    values.push({ id: `${id}_prof`, label: `${label} Proficient`, kind: 'bool', value: false, group: 'Skills' });
+    values.push({ id, label, kind: 'calc', formula: `${ab}_mod + ${id}_prof * proficiency_bonus`, signed: true, group: 'Skills' });
   }
   values.push({ id: 'passive_perception', label: 'Passive Perception', kind: 'calc', formula: '10 + perception', group: 'Skills' });
 
@@ -945,12 +956,12 @@ function dnd5eCharacter(name = 'New Hero') {
         w({ ref: 'proficiency_bonus' }),
         w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, editableInPlay: true }),
         w({ kind: 'label', title: 'Saving Throws', cols: 2 }),
-        w({ ref: 'save_str', rollOverride: '1d20 + save_str' }),
-        w({ ref: 'save_dex', rollOverride: '1d20 + save_dex' }),
-        w({ ref: 'save_con', rollOverride: '1d20 + save_con' }),
-        w({ ref: 'save_int', rollOverride: '1d20 + save_int' }),
-        w({ ref: 'save_wis', rollOverride: '1d20 + save_wis' }),
-        w({ ref: 'save_cha', rollOverride: '1d20 + save_cha' }),
+        w({ ref: 'save_str', profRef: 'save_str_prof', rollOverride: '1d20 + save_str' }),
+        w({ ref: 'save_dex', profRef: 'save_dex_prof', rollOverride: '1d20 + save_dex' }),
+        w({ ref: 'save_con', profRef: 'save_con_prof', rollOverride: '1d20 + save_con' }),
+        w({ ref: 'save_int', profRef: 'save_int_prof', rollOverride: '1d20 + save_int' }),
+        w({ ref: 'save_wis', profRef: 'save_wis_prof', rollOverride: '1d20 + save_wis' }),
+        w({ ref: 'save_cha', profRef: 'save_cha_prof', rollOverride: '1d20 + save_cha' }),
         w({ kind: 'label', title: 'Attacks', cols: 2 }),
         w({ ref: 'longsword', cols: 2 }),
         w({ ref: 'shortbow', cols: 2 }),
@@ -959,8 +970,8 @@ function dnd5eCharacter(name = 'New Hero') {
     {
       id: newId('page'), name: 'Skills',
       widgets: [
-        w({ kind: 'label', title: 'Skills (tap to roll a check)', cols: 2 }),
-        ...SKILLS.map(([id]) => w({ ref: id, rollOverride: `1d20 + ${id}` })),
+        w({ kind: 'label', title: 'Skills — ● = proficient · tap to roll', cols: 2 }),
+        ...SKILLS.map(([id]) => w({ ref: id, profRef: `${id}_prof`, rollOverride: `1d20 + ${id}` })),
         w({ ref: 'passive_perception', cols: 2 }),
       ],
     },
@@ -1523,6 +1534,18 @@ function renderWidget(w, index, page) {
     if (s) node.append(el('div', { class: 'ws', text: `${s.label}: ${displayValue(s)}` }));
   }
 
+  // Proficiency dot (official-sheet style): a fillable circle wired to a boolean
+  // value. Tapping it in play mode toggles proficiency, which re-derives the mod.
+  if (play && w.profRef) {
+    const profV = valueById(w.profRef);
+    if (profV && profV.kind === 'bool') {
+      node.classList.add('has-prof');
+      const dot = el('button', { class: `profdot ${profV.value ? 'on' : ''}`, title: profV.value ? 'Proficient — tap to clear' : 'Not proficient — tap to add', 'aria-pressed': String(!!profV.value) });
+      dot.addEventListener('click', (e) => { e.stopPropagation(); profV.value = !profV.value; commit(); });
+      node.append(dot);
+    }
+  }
+
   if (tappable) {
     node.append(el('div', { class: 'marker', text: rolls.length ? '🎲' : 'ⓘ' }));
     node.classList.add('tappable');
@@ -1547,6 +1570,7 @@ function displayValue(v) {
   let out;
   if (v.kind === 'calc') { const r = computed.results.get(v.id); out = r === undefined ? 'ERR' : r; }
   else if (v.kind === 'text') return v.text || '—';
+  else if (v.kind === 'bool') return v.value ? 'Yes' : 'No';
   else out = v.value ?? 0;
   if (out === 'ERR') return 'ERR';
   if (v.signed && typeof out === 'number') return signedStr(out);
@@ -2160,7 +2184,7 @@ function openAddWidget(page) {
         const matches = c.values.filter((v) => (v.label + ' ' + v.id).toLowerCase().includes(query.toLowerCase()));
         matches.slice(0, 30).forEach((v) => list.append(el('button', {
           onclick: () => { page.widgets.push(newBoundWidget(v)); state.overlay = null; commit(); },
-        }, [el('span', { class: 'mi', text: v.kind === 'calc' ? 'ƒ' : v.kind === 'text' ? 'T' : '#' }), `${v.label}  `, el('span', { class: 'pill', text: v.id })])));
+        }, [el('span', { class: 'mi', text: v.kind === 'calc' ? 'ƒ' : v.kind === 'text' ? 'T' : v.kind === 'bool' ? '☑' : '#' }), `${v.label}  `, el('span', { class: 'pill', text: v.id })])));
         if (!matches.length) list.append(el('div', { class: 'empty', text: 'No values match.' }));
       };
       refreshList();
@@ -2209,6 +2233,12 @@ function openWidgetConfig(w, page) {
       refSel.value = w.ref || '';
       const secSel = valueOptions((id) => { w.secondaryRef = id; commit(); }, true);
       secSel.value = w.secondaryRef || '';
+      const boolVals = c.values.filter((x) => x.kind === 'bool');
+      const profSel = el('select', { onchange: (e) => { w.profRef = e.target.value || undefined; commit(); } }, [
+        el('option', { value: '', text: '— none —' }),
+        ...boolVals.map((x) => el('option', { value: x.id, text: `${x.label} (${x.id})` })),
+      ]);
+      profSel.value = w.profRef || '';
 
       return sheetCard([
         el('h2', { text: 'Configure widget' }),
@@ -2225,7 +2255,12 @@ function openWidgetConfig(w, page) {
             onclick: () => { w.editableInPlay = !w.editableInPlay; commit(); },
           }, el('span', { class: 'knob' })),
         ]),
-        el('div', { class: 'field', style: 'margin-top:14px' }, [
+        boolVals.length ? el('div', { class: 'field', style: 'margin-top:14px' }, [
+          el('label', { text: 'Proficiency dot (boolean value)' }),
+          profSel,
+          el('div', { class: 'hint', text: 'Shows a fillable ● on the card; tapping it toggles that boolean (e.g. save/skill proficiency).' }),
+        ]) : null,
+        el('div', { class: 'field', style: `margin-top:${boolVals.length ? 0 : 14}px` }, [
           el('label', { text: 'Roll override (else uses value’s own roll)' }),
           el('input', { placeholder: v?.roll ? `inherits: ${v.roll}` : 'e.g. 1d20 + str_mod', value: w.rollOverride || '', oninput: (e) => { w.rollOverride = e.target.value || undefined; store.save(state.save); } }),
           el('div', { class: 'hint', text: 'Adds a roll button in this card’s details. The value’s own rolls also appear.' }),
@@ -2283,11 +2318,18 @@ function openValueEditor(existing, onCreate) {
         ? el('input', { placeholder: 'lowercase_slug', value: idDraft, oninput: (e) => { idDraft = e.target.value; } })
         : el('input', { class: 'locked', value: v.id, readonly: true, title: 'Value ids are immutable — formulas reference them.' });
 
-      const kindSeg = el('div', { class: 'seg' }, ['number', 'text', 'calc'].map((k) => el('button', { class: v.kind === k ? 'on' : '', text: k, onclick: () => { v.kind = k; render(); } })));
+      const kindSeg = el('div', { class: 'seg' }, ['number', 'text', 'calc', 'bool'].map((k) => el('button', { class: v.kind === k ? 'on' : '', text: k, onclick: () => { v.kind = k; render(); } })));
 
       const kindFields = el('div');
       if (v.kind === 'number') kindFields.append(field('Value', el('input', { type: 'number', value: v.value ?? 0, oninput: (e) => { v.value = Number(e.target.value); } })));
       if (v.kind === 'text') kindFields.append(field('Text', el('input', { value: v.text || '', oninput: (e) => { v.text = e.target.value; } })));
+      if (v.kind === 'bool') kindFields.append(el('div', { class: 'toggle-row', style: 'margin-top:2px' }, [
+        el('div', {}, [
+          el('div', { class: 'theme-nm', text: 'Default state' }),
+          el('div', { class: 'desc', style: 'margin:0', text: 'A checkbox/dot value. Reads as 1 (on) or 0 (off) inside formulas — e.g. proficient × proficiency_bonus.' }),
+        ]),
+        el('button', { class: `switch ${v.value ? 'on' : ''}`, role: 'switch', 'aria-checked': String(!!v.value), onclick: () => { v.value = !v.value; render(); } }, el('span', { class: 'knob' })),
+      ]));
       if (v.kind === 'calc') {
         // Build the formula field by hand so keystrokes update only the ERR hint
         // (not a full re-render, which would destroy the input and drop focus).
@@ -2325,10 +2367,11 @@ function openValueEditor(existing, onCreate) {
       ]);
 
       function saveValue() {
-        // normalise empties
-        if (v.kind !== 'number') v.value = undefined;
-        if (v.kind !== 'text') v.text = v.kind === 'text' ? v.text : undefined;
-        if (v.kind !== 'calc') v.formula = undefined;
+        // normalise fields to the chosen kind
+        if (v.kind === 'number') { v.value = Number(v.value) || 0; v.text = undefined; v.formula = undefined; }
+        else if (v.kind === 'bool') { v.value = !!v.value; v.text = undefined; v.formula = undefined; }
+        else if (v.kind === 'text') { v.value = undefined; v.formula = undefined; }
+        else if (v.kind === 'calc') { v.value = undefined; v.text = undefined; }
         delete v.roll; // standardise on the rolls[] array
         v.rolls = (v.rolls || []).filter((r) => r && r.expr && r.expr.trim())
           .map((r) => ({ name: (r.name || '').trim(), expr: r.expr.trim() }));
@@ -2494,8 +2537,40 @@ function migrateSave(save) {
   save.layoutScale = 4;
 }
 
+// Retrofit proficiency onto pre-existing 5e characters: any calc value whose
+// formula is exactly a raw ability mod (`str_mod`, `dex_mod`, …) gains a boolean
+// `<id>_prof` leaf and `mod + <id>_prof * proficiency_bonus`; widgets bound to it
+// get a `profRef`. Purely additive and pattern-matched — leaves edited formulas
+// untouched. Runs once (guarded by save.profUpgrade).
+function upgradeProficiency(save) {
+  if (save.profUpgrade) return;
+  const RAW = /^\s*(str|dex|con|int|wis|cha)_mod\s*$/;
+  for (const c of save.characters || []) {
+    if (c.preset !== 'dnd5e') continue;
+    const has = new Set(c.values.map((v) => v.id));
+    if (!has.has('proficiency_bonus')) continue;
+    const upgraded = new Set();
+    for (const v of [...c.values]) {
+      if (v.kind !== 'calc') continue;
+      const m = RAW.exec(v.formula || '');
+      if (!m) continue;
+      const profId = `${v.id}_prof`;
+      if (has.has(profId)) continue;
+      c.values.push({ id: profId, label: `${v.label || v.id} Proficient`, kind: 'bool', value: false, group: v.group });
+      has.add(profId);
+      v.formula = `${m[1]}_mod + ${profId} * proficiency_bonus`;
+      upgraded.add(v.id);
+    }
+    for (const p of c.pages || []) for (const w of p.widgets || []) {
+      if (w.kind === 'bound' && upgraded.has(w.ref) && !w.profRef) w.profRef = `${w.ref}_prof`;
+    }
+  }
+  save.profUpgrade = true;
+}
+
 // --- boot ------------------------------------------------------------------
 migrateSave(state.save);
+upgradeProficiency(state.save);
 store.saveNow(state.save);
 applyTheme(state.theme);
 if (new URLSearchParams(location.search).get('sheet') && state.save.activeCharacterId) state.view = 'sheet';

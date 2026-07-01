@@ -298,9 +298,11 @@ export function computeAll(values) {
   const details = new Map(); // id -> { formula?, error? , breakdown? }
   const compiled = new Map();
 
-  // Seed literal (number/text) values.
+  // Seed literal (number/bool/text) values. A boolean resolves to 1/0 so it can
+  // multiply into arithmetic (e.g. proficient * proficiency_bonus).
   for (const v of values) {
     if (v.kind === 'number') results.set(v.id, typeof v.value === 'number' ? v.value : 0);
+    else if (v.kind === 'bool') results.set(v.id, v.value ? 1 : 0);
     else if (v.kind === 'text') results.set(v.id, v.text ?? '');
   }
 

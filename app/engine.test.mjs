@@ -38,6 +38,23 @@ eq('mod by zero', computeAll([{ id: 'a', kind: 'calc', formula: '5 % 0' }]).resu
 // refs extraction
 eq('refsOf', refsOf('10 + dex_mod + str_mod').sort(), ['dex_mod', 'str_mod']);
 
+// boolean leaf kind — resolves to 1/0 and multiplies into a formula (proficiency)
+const profVals = [
+  { id: 'dexterity', kind: 'number', value: 14 },
+  { id: 'dex_mod', kind: 'calc', formula: 'floor((dexterity - 10) / 2)' },
+  { id: 'level', kind: 'number', value: 5 },
+  { id: 'proficiency_bonus', kind: 'calc', formula: '2 + floor((level - 1) / 4)' },
+  { id: 'stealth_prof', kind: 'bool', value: true },
+  { id: 'acrobatics_prof', kind: 'bool', value: false },
+  { id: 'stealth', kind: 'calc', formula: 'dex_mod + stealth_prof * proficiency_bonus' },
+  { id: 'acrobatics', kind: 'calc', formula: 'dex_mod + acrobatics_prof * proficiency_bonus' },
+];
+const pv = computeAll(profVals).results;
+eq('bool true adds proficiency', pv.get('stealth'), 2 + 3);   // dex_mod 2 + prof 3
+eq('bool false omits proficiency', pv.get('acrobatics'), 2);   // dex_mod 2 + 0
+eq('bool resolves to 1', computeAll([{ id: 'b', kind: 'bool', value: true }, { id: 'a', kind: 'calc', formula: 'b + 4' }]).results.get('a'), 5);
+eq('bool resolves to 0', computeAll([{ id: 'b', kind: 'bool', value: false }, { id: 'a', kind: 'calc', formula: 'b + 4' }]).results.get('a'), 4);
+
 // dice rejected in calc
 let threw = false;
 try { compileCalc('1d20 + 3'); } catch (e) { threw = e instanceof FormulaError; }

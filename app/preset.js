@@ -68,14 +68,17 @@ export function dnd5eCharacter(name = 'New Hero') {
   values.push({ id: 'hp_current', label: 'HP', kind: 'number', value: 10, group: 'Combat' });
   values.push({ id: 'hp_max', label: 'Max HP', kind: 'number', value: 10, group: 'Combat' });
 
-  // Saving throws — raw ability mods (proficiency deferred).
+  // Saving throws — ability mod plus (proficient ? proficiency_bonus : 0).
+  // Each save carries a boolean "proficient" leaf the sheet toggles with a dot.
   for (const [, , ab] of ABILITIES) {
-    values.push({ id: `save_${ab}`, label: `${ab.toUpperCase()} Save`, kind: 'calc', formula: `${ab}_mod`, signed: true, group: 'Saves' });
+    values.push({ id: `save_${ab}_prof`, label: `${ab.toUpperCase()} Save Proficient`, kind: 'bool', value: false, group: 'Saves' });
+    values.push({ id: `save_${ab}`, label: `${ab.toUpperCase()} Save`, kind: 'calc', formula: `${ab}_mod + save_${ab}_prof * proficiency_bonus`, signed: true, group: 'Saves' });
   }
 
-  // Skills — raw ability mods.
+  // Skills — ability mod plus proficiency when the skill's dot is filled.
   for (const [id, label, ab] of SKILLS) {
-    values.push({ id, label, kind: 'calc', formula: `${ab}_mod`, signed: true, group: 'Skills' });
+    values.push({ id: `${id}_prof`, label: `${label} Proficient`, kind: 'bool', value: false, group: 'Skills' });
+    values.push({ id, label, kind: 'calc', formula: `${ab}_mod + ${id}_prof * proficiency_bonus`, signed: true, group: 'Skills' });
   }
   values.push({ id: 'passive_perception', label: 'Passive Perception', kind: 'calc', formula: '10 + perception', group: 'Skills' });
 
@@ -121,12 +124,12 @@ export function dnd5eCharacter(name = 'New Hero') {
         w({ ref: 'proficiency_bonus' }),
         w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, editableInPlay: true }),
         w({ kind: 'label', title: 'Saving Throws', cols: 2 }),
-        w({ ref: 'save_str', rollOverride: '1d20 + save_str' }),
-        w({ ref: 'save_dex', rollOverride: '1d20 + save_dex' }),
-        w({ ref: 'save_con', rollOverride: '1d20 + save_con' }),
-        w({ ref: 'save_int', rollOverride: '1d20 + save_int' }),
-        w({ ref: 'save_wis', rollOverride: '1d20 + save_wis' }),
-        w({ ref: 'save_cha', rollOverride: '1d20 + save_cha' }),
+        w({ ref: 'save_str', profRef: 'save_str_prof', rollOverride: '1d20 + save_str' }),
+        w({ ref: 'save_dex', profRef: 'save_dex_prof', rollOverride: '1d20 + save_dex' }),
+        w({ ref: 'save_con', profRef: 'save_con_prof', rollOverride: '1d20 + save_con' }),
+        w({ ref: 'save_int', profRef: 'save_int_prof', rollOverride: '1d20 + save_int' }),
+        w({ ref: 'save_wis', profRef: 'save_wis_prof', rollOverride: '1d20 + save_wis' }),
+        w({ ref: 'save_cha', profRef: 'save_cha_prof', rollOverride: '1d20 + save_cha' }),
         w({ kind: 'label', title: 'Attacks', cols: 2 }),
         w({ ref: 'longsword', cols: 2 }),
         w({ ref: 'shortbow', cols: 2 }),
@@ -135,8 +138,8 @@ export function dnd5eCharacter(name = 'New Hero') {
     {
       id: newId('page'), name: 'Skills',
       widgets: [
-        w({ kind: 'label', title: 'Skills (tap to roll a check)', cols: 2 }),
-        ...SKILLS.map(([id]) => w({ ref: id, rollOverride: `1d20 + ${id}` })),
+        w({ kind: 'label', title: 'Skills — ● = proficient · tap to roll', cols: 2 }),
+        ...SKILLS.map(([id]) => w({ ref: id, profRef: `${id}_prof`, rollOverride: `1d20 + ${id}` })),
         w({ ref: 'passive_perception', cols: 2 }),
       ],
     },
