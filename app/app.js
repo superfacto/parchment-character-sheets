@@ -134,7 +134,16 @@ function render() {
   if (state.view === 'home' || !activeChar()) frame.append(renderHome());
   else frame.append(...renderSheet());
   app.append(frame);
-  if (state.overlay) document.body.append(renderOverlay());
+  if (state.overlay) {
+    const ov = renderOverlay();
+    // Only play the rise/fade entrance on first mount — re-renders (typing in a
+    // field, tapping builder chips) must not replay it and flicker.
+    if (state._overlayMounted) ov.classList.add('no-anim');
+    state._overlayMounted = true;
+    document.body.append(ov);
+  } else {
+    state._overlayMounted = false;
+  }
   if (state.toast) document.body.append(el('div', { class: 'toast', text: state.toast }));
 }
 
@@ -831,17 +840,75 @@ function quickCreate(kind) {
 }
 
 // --- Guided 5e character builder -------------------------------------------
+// Content mirrors the core PHB. Saving-throw proficiencies and background skill
+// pairs (2014) are the standard rules; 2024 species speeds/traits and the
+// 2024-background ability boosts are modelled faithfully but simplified (see the
+// in-flow notes) and — like everything here — stay fully editable after.
 const BUILD_CLASSES = [
-  { name: 'Barbarian', hd: 12, prime: ['str'] }, { name: 'Bard', hd: 8, prime: ['cha'] },
-  { name: 'Cleric', hd: 8, prime: ['wis'] }, { name: 'Druid', hd: 8, prime: ['wis'] },
-  { name: 'Fighter', hd: 10, prime: ['str', 'dex'] }, { name: 'Monk', hd: 8, prime: ['dex', 'wis'] },
-  { name: 'Paladin', hd: 10, prime: ['str', 'cha'] }, { name: 'Ranger', hd: 10, prime: ['dex', 'wis'] },
-  { name: 'Rogue', hd: 8, prime: ['dex'] }, { name: 'Sorcerer', hd: 6, prime: ['cha'] },
-  { name: 'Warlock', hd: 8, prime: ['cha'] }, { name: 'Wizard', hd: 6, prime: ['int'] },
+  { name: 'Barbarian', hd: 12, prime: ['str'], saves: ['str', 'con'], skills: { n: 2, from: ['animal_handling', 'athletics', 'intimidation', 'nature', 'perception', 'survival'] } },
+  { name: 'Bard', hd: 8, prime: ['cha'], saves: ['dex', 'cha'], skills: { n: 3, from: 'any' } },
+  { name: 'Cleric', hd: 8, prime: ['wis'], saves: ['wis', 'cha'], skills: { n: 2, from: ['history', 'insight', 'medicine', 'persuasion', 'religion'] } },
+  { name: 'Druid', hd: 8, prime: ['wis'], saves: ['int', 'wis'], skills: { n: 2, from: ['arcana', 'animal_handling', 'insight', 'medicine', 'nature', 'perception', 'religion', 'survival'] } },
+  { name: 'Fighter', hd: 10, prime: ['str', 'dex'], saves: ['str', 'con'], skills: { n: 2, from: ['acrobatics', 'animal_handling', 'athletics', 'history', 'insight', 'intimidation', 'perception', 'survival'] } },
+  { name: 'Monk', hd: 8, prime: ['dex', 'wis'], saves: ['str', 'dex'], skills: { n: 2, from: ['acrobatics', 'athletics', 'history', 'insight', 'religion', 'stealth'] } },
+  { name: 'Paladin', hd: 10, prime: ['str', 'cha'], saves: ['wis', 'cha'], skills: { n: 2, from: ['athletics', 'insight', 'intimidation', 'medicine', 'persuasion', 'religion'] } },
+  { name: 'Ranger', hd: 10, prime: ['dex', 'wis'], saves: ['str', 'dex'], skills: { n: 3, from: ['animal_handling', 'athletics', 'insight', 'investigation', 'nature', 'perception', 'stealth', 'survival'] } },
+  { name: 'Rogue', hd: 8, prime: ['dex'], saves: ['dex', 'int'], skills: { n: 4, from: ['acrobatics', 'athletics', 'deception', 'insight', 'intimidation', 'investigation', 'perception', 'performance', 'persuasion', 'sleight_of_hand', 'stealth'] } },
+  { name: 'Sorcerer', hd: 6, prime: ['cha'], saves: ['con', 'cha'], skills: { n: 2, from: ['arcana', 'deception', 'insight', 'intimidation', 'persuasion', 'religion'] } },
+  { name: 'Warlock', hd: 8, prime: ['cha'], saves: ['wis', 'cha'], skills: { n: 2, from: ['arcana', 'deception', 'history', 'intimidation', 'investigation', 'nature', 'religion'] } },
+  { name: 'Wizard', hd: 6, prime: ['int'], saves: ['int', 'wis'], skills: { n: 2, from: ['arcana', 'history', 'insight', 'investigation', 'medicine', 'religion'] } },
 ];
+// 2014 races carry the ability score increases (asi); asiFlex = extra +1s to
+// place anywhere (Half-Elf/Variant Human); skillFlex = free skill choices.
+const RACES_2014 = [
+  { name: 'Hill Dwarf', asi: { con: 2, wis: 1 }, speed: 25, skills: [], note: 'Darkvision, Dwarven Resilience' },
+  { name: 'Mountain Dwarf', asi: { str: 2, con: 2 }, speed: 25, skills: [], note: 'Darkvision, armor training' },
+  { name: 'High Elf', asi: { dex: 2, int: 1 }, speed: 30, skills: ['perception'], note: 'Darkvision, a wizard cantrip' },
+  { name: 'Wood Elf', asi: { dex: 2, wis: 1 }, speed: 35, skills: ['perception'], note: 'Darkvision, Mask of the Wild' },
+  { name: 'Lightfoot Halfling', asi: { dex: 2, cha: 1 }, speed: 25, skills: [], note: 'Lucky, Naturally Stealthy' },
+  { name: 'Stout Halfling', asi: { dex: 2, con: 1 }, speed: 25, skills: [], note: 'Lucky, Stout Resilience' },
+  { name: 'Human', asi: { str: 1, dex: 1, con: 1, int: 1, wis: 1, cha: 1 }, speed: 30, skills: [], note: '+1 to every ability' },
+  { name: 'Variant Human', asi: {}, asiFlex: 2, skillFlex: 1, speed: 30, skills: [], note: '+1 to two abilities, a skill, and a feat' },
+  { name: 'Dragonborn', asi: { str: 2, cha: 1 }, speed: 30, skills: [], note: 'Breath weapon, damage resistance' },
+  { name: 'Forest Gnome', asi: { int: 2, dex: 1 }, speed: 25, skills: [], note: 'Darkvision, Gnome Cunning' },
+  { name: 'Rock Gnome', asi: { int: 2, con: 1 }, speed: 25, skills: [], note: 'Darkvision, tinker' },
+  { name: 'Half-Elf', asi: { cha: 2 }, asiFlex: 2, skillFlex: 2, speed: 30, skills: [], note: '+2 CHA, +1 to two others, two skills' },
+  { name: 'Half-Orc', asi: { str: 2, con: 1 }, speed: 30, skills: ['intimidation'], note: 'Relentless Endurance, Savage Attacks' },
+  { name: 'Tiefling', asi: { int: 1, cha: 2 }, speed: 30, skills: [], note: 'Darkvision, Hellish Resistance' },
+];
+// 2024 species grant NO ability increases (those come from the background).
+const SPECIES_2024 = [
+  { name: 'Human', asi: {}, speed: 30, skills: [], skillFlex: 1, note: 'Resourceful, Skillful (a skill), Versatile' },
+  { name: 'Elf', asi: {}, speed: 30, skills: ['perception'], note: 'Darkvision, Fey Ancestry, lineage' },
+  { name: 'Dwarf', asi: {}, speed: 30, skills: [], note: 'Darkvision 120, Dwarven Resilience' },
+  { name: 'Halfling', asi: {}, speed: 30, skills: [], note: 'Brave, Halfling Luck, Nimbleness' },
+  { name: 'Dragonborn', asi: {}, speed: 30, skills: [], note: 'Draconic ancestry, breath weapon' },
+  { name: 'Gnome', asi: {}, speed: 30, skills: [], note: 'Darkvision, Gnomish Cunning' },
+  { name: 'Orc', asi: {}, speed: 30, skills: [], note: 'Adrenaline Rush, Relentless Endurance' },
+  { name: 'Tiefling', asi: {}, speed: 30, skills: [], note: 'Fiendish Legacy, darkvision' },
+  { name: 'Goliath', asi: {}, speed: 35, skills: [], note: 'Giant Ancestry, Large Form' },
+  { name: 'Aasimar', asi: {}, speed: 30, skills: [], note: 'Celestial Resistance, Healing Hands' },
+];
+// 2014 backgrounds grant two fixed skill proficiencies.
+const BG_2014 = [
+  { name: 'Acolyte', skills: ['insight', 'religion'] }, { name: 'Charlatan', skills: ['deception', 'sleight_of_hand'] },
+  { name: 'Criminal', skills: ['deception', 'stealth'] }, { name: 'Entertainer', skills: ['acrobatics', 'performance'] },
+  { name: 'Folk Hero', skills: ['animal_handling', 'survival'] }, { name: 'Guild Artisan', skills: ['insight', 'persuasion'] },
+  { name: 'Hermit', skills: ['medicine', 'religion'] }, { name: 'Noble', skills: ['history', 'persuasion'] },
+  { name: 'Outlander', skills: ['athletics', 'survival'] }, { name: 'Sage', skills: ['arcana', 'history'] },
+  { name: 'Sailor', skills: ['athletics', 'perception'] }, { name: 'Soldier', skills: ['athletics', 'intimidation'] },
+  { name: 'Urchin', skills: ['sleight_of_hand', 'stealth'] },
+];
+// 2024 backgrounds grant an ability boost (+2/+1 among three) + an origin feat +
+// two skills + a tool. Modelled simplified: a free +2/+1 boost and two free skill
+// picks (ability triples/feats vary per background — set them by hand after).
+const BG_2024 = ['Acolyte', 'Artisan', 'Charlatan', 'Criminal', 'Entertainer', 'Farmer', 'Guard', 'Guide', 'Hermit', 'Merchant', 'Noble', 'Sage', 'Sailor', 'Scribe', 'Soldier', 'Wayfarer'].map((name) => ({ name, skills: [], skillFlex: 2 }));
+
 const STD_ARRAY = [15, 14, 13, 12, 10, 8];
 // [shortKey (mod id prefix / scores key), label, full ability value id]
 const ABILITY_KEYS = [['str', 'STR', 'strength'], ['dex', 'DEX', 'dexterity'], ['con', 'CON', 'constitution'], ['int', 'INT', 'intelligence'], ['wis', 'WIS', 'wisdom'], ['cha', 'CHA', 'charisma']];
+const ALL_SKILLS = [['acrobatics', 'Acrobatics'], ['animal_handling', 'Animal Handling'], ['arcana', 'Arcana'], ['athletics', 'Athletics'], ['deception', 'Deception'], ['history', 'History'], ['insight', 'Insight'], ['intimidation', 'Intimidation'], ['investigation', 'Investigation'], ['medicine', 'Medicine'], ['nature', 'Nature'], ['perception', 'Perception'], ['performance', 'Performance'], ['persuasion', 'Persuasion'], ['religion', 'Religion'], ['sleight_of_hand', 'Sleight of Hand'], ['stealth', 'Stealth'], ['survival', 'Survival']];
+const SKILL_LABEL = Object.fromEntries(ALL_SKILLS);
 function abilityMod(score) { return Math.floor((score - 10) / 2); }
 function hpFor(hd, conMod, level) {
   const avg = Math.floor(hd / 2) + 1;                    // fixed average per level
@@ -851,60 +918,165 @@ function assignStdArray(scores, cls) {
   const order = [...new Set([...cls.prime, 'con', 'dex', 'wis', 'str', 'int', 'cha'])];
   STD_ARRAY.forEach((val, i) => { if (order[i]) scores[order[i]] = val; });
 }
+// Where the flexible ability boosts come from: racial choice (2014) or the
+// background boost (2024). pool = points to place, cap = max into one ability.
+function flexSpec(data) {
+  if (data.ed === '2024') return { pool: data.bg ? 3 : 0, cap: 2, label: 'Background ability boost — assign +2 and +1 (or +1/+1/+1)' };
+  const f = data.race && data.race.asiFlex || 0;
+  return { pool: f, cap: 1, label: 'Racial ability choice — place your +1s' };
+}
+function fixedAsi(data) { return (data.ed === '2014' && data.race && data.race.asi) || {}; }
+function finalScore(data, k) { return (data.base[k] || 10) + (fixedAsi(data)[k] || 0) + (data.flex[k] || 0); }
+function raceList(data) { return data.ed === '2024' ? SPECIES_2024 : RACES_2014; }
+function bgList(data) { return data.ed === '2024' ? BG_2024 : BG_2014; }
+// Skills granted automatically (race/species + fixed background), for locking.
+function grantedSkills(data) {
+  const s = new Set([...(data.race && data.race.skills || []), ...(data.bg && data.bg.skills || [])]);
+  return s;
+}
+// Free skill picks available beyond class skills (racial + 2024 background).
+function freeSkillCount(data) { return (data.race && data.race.skillFlex || 0) + (data.bg && data.bg.skillFlex || 0); }
 
 function openBuilder() {
-  const data = { name: '', cls: BUILD_CLASSES.find((c) => c.name === 'Fighter'), level: 1, scores: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 } };
-  const steps = ['Basics', 'Abilities', 'Review'];
+  const data = {
+    ed: '2014', name: '', cls: BUILD_CLASSES.find((c) => c.name === 'Fighter'), level: 1,
+    base: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 }, flex: {},
+    race: null, bg: null, classSkills: [], freeSkills: [],
+  };
   let step = 0;
+  const resetForEdition = () => { data.race = null; data.bg = null; data.flex = {}; data.freeSkills = []; };
+  const steps = () => ['Basics', data.ed === '2024' ? 'Species' : 'Race', 'Background', 'Abilities', 'Proficiencies', 'Review'];
+
+  // A reusable skill-picker section.
+  function skillPicker(title, ids, chosen, max, locked) {
+    const left = max - chosen.length;
+    const wrap = el('div', { class: 'pick-sec' }, [el('div', { class: 'pick-h' }, [el('span', { text: title }), el('span', { class: 'pick-left', text: left > 0 ? `${left} left` : 'done' })])]);
+    const chips = el('div', { class: 'skill-chips' });
+    ids.forEach((id) => {
+      const isLocked = locked.has(id);
+      const on = isLocked || chosen.includes(id);
+      const chip = el('button', { class: `chip ${on ? 'on' : ''} ${isLocked ? 'locked' : ''}`, text: SKILL_LABEL[id] || id, disabled: isLocked || (!on && left <= 0) });
+      if (!isLocked) chip.addEventListener('click', () => {
+        const at = chosen.indexOf(id);
+        if (at >= 0) chosen.splice(at, 1); else if (left > 0) chosen.push(id);
+        render();
+      });
+      chips.append(chip);
+    });
+    wrap.append(chips);
+    return wrap;
+  }
+
   state.overlay = {
     render() {
-      const kids = [el('div', { class: 'wiz-steps' }, steps.map((s, i) => el('span', { class: `wiz-step ${i === step ? 'on' : ''} ${i < step ? 'done' : ''}`, text: `${i + 1}. ${s}` })))];
+      const S = steps();
+      const kids = [el('div', { class: 'wiz-steps' }, S.map((s, i) => el('span', { class: `wiz-step ${i === step ? 'on' : ''} ${i < step ? 'done' : ''}`, text: s })))];
 
-      if (step === 0) {
-        const nameInput = el('input', { placeholder: 'e.g. Thordak', value: data.name, oninput: (e) => { data.name = e.target.value; } });
+      if (step === 0) {                                   // Basics
         kids.push(el('h2', { text: 'Basics' }));
+        kids.push(el('div', { class: 'field' }, [
+          el('label', { text: 'Rules edition' }),
+          el('div', { class: 'seg' }, [
+            el('button', { class: data.ed === '2014' ? 'on' : '', text: '2014 (Race)', onclick: () => { if (data.ed !== '2014') { data.ed = '2014'; resetForEdition(); render(); } } }),
+            el('button', { class: data.ed === '2024' ? 'on' : '', text: '2024 (Species)', onclick: () => { if (data.ed !== '2024') { data.ed = '2024'; resetForEdition(); render(); } } }),
+          ]),
+          el('div', { class: 'hint', text: data.ed === '2014' ? 'Ability bonuses come from your race.' : 'Species give traits only; ability bonuses come from your background.' }),
+        ]));
+        const nameInput = el('input', { placeholder: 'e.g. Thordak', value: data.name, oninput: (e) => { data.name = e.target.value; } });
         kids.push(field('Name', nameInput));
         kids.push(el('div', { class: 'field' }, [
           el('label', { text: 'Class' }),
-          el('div', { class: 'class-grid' }, BUILD_CLASSES.map((cl) => el('button', { class: data.cls.name === cl.name ? 'on' : '', text: cl.name, onclick: () => { data.cls = cl; render(); } }))),
+          el('div', { class: 'class-grid' }, BUILD_CLASSES.map((cl) => el('button', { class: data.cls.name === cl.name ? 'on' : '', text: cl.name, onclick: () => { data.cls = cl; data.classSkills = []; render(); } }))),
         ]));
         kids.push(el('div', { class: 'field' }, [
           el('label', { text: `Level — ${data.level}` }),
           el('input', { type: 'range', min: 1, max: 20, value: data.level, oninput: (e) => { data.level = Number(e.target.value); render(); } }),
         ]));
-        kids.push(el('div', { class: 'hint', text: `${data.cls.name}: d${data.cls.hd} hit die · key ability ${data.cls.prime.map((p) => p.toUpperCase()).join(' / ')}` }));
-      } else if (step === 1) {
+        kids.push(el('div', { class: 'hint', text: `${data.cls.name}: d${data.cls.hd} hit die · saves ${data.cls.saves.map((a) => a.toUpperCase()).join(' & ')}` }));
+      } else if (step === 1) {                            // Race / Species
+        kids.push(el('h2', { text: data.ed === '2024' ? 'Species' : 'Race' }));
+        kids.push(el('div', { class: 'pick-list' }, raceList(data).map((r) => {
+          const bonus = data.ed === '2014' ? Object.entries(r.asi).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(' ') + (r.asiFlex ? ` · +${r.asiFlex} free` : '') : 'traits only';
+          return el('button', { class: `pick ${data.race && data.race.name === r.name ? 'on' : ''}`, onclick: () => { data.race = r; data.freeSkills = []; data.flex = {}; render(); } }, [
+            el('div', { class: 'pick-t', text: r.name }),
+            el('div', { class: 'pick-d', text: `Speed ${r.speed} ft · ${bonus}${r.skills && r.skills.length ? ' · ' + r.skills.map((s) => SKILL_LABEL[s]).join(', ') : ''}` }),
+            el('div', { class: 'pick-d', text: r.note }),
+          ]);
+        })));
+      } else if (step === 2) {                            // Background
+        kids.push(el('h2', { text: 'Background' }));
+        kids.push(el('div', { class: 'pick-list' }, bgList(data).map((b) =>
+          el('button', { class: `pick ${data.bg && data.bg.name === b.name ? 'on' : ''}`, onclick: () => { data.bg = b; data.freeSkills = []; data.flex = {}; render(); } }, [
+            el('div', { class: 'pick-t', text: b.name }),
+            el('div', { class: 'pick-d', text: data.ed === '2014' ? `Skills: ${b.skills.map((s) => SKILL_LABEL[s]).join(', ')}` : 'Grants an ability boost (+2/+1) and two skills' }),
+          ]))));
+        if (data.ed === '2024') kids.push(el('div', { class: 'hint', text: 'Simplified: 2024 backgrounds vary — set the exact ability options, feat and tools by hand after creation.' }));
+      } else if (step === 3) {                            // Abilities
+        const spec = flexSpec(data);
+        const used = Object.values(data.flex).reduce((a, b) => a + b, 0);
+        const remaining = spec.pool - used;
         kids.push(el('h2', { text: 'Ability scores' }));
         kids.push(el('div', { class: 'btnrow', style: 'margin-bottom:10px' }, [
-          el('button', { class: 'btn ghost', text: 'Standard array', onclick: () => { assignStdArray(data.scores, data.cls); render(); } }),
-          el('button', { class: 'btn ghost', text: 'Reset to 10', onclick: () => { ABILITY_KEYS.forEach(([k]) => { data.scores[k] = 10; }); render(); } }),
+          el('button', { class: 'btn ghost', text: 'Standard array', onclick: () => { assignStdArray(data.base, data.cls); render(); } }),
+          el('button', { class: 'btn ghost', text: 'Reset to 10', onclick: () => { ABILITY_KEYS.forEach(([k]) => { data.base[k] = 10; }); render(); } }),
         ]));
         ABILITY_KEYS.forEach(([k, lbl]) => {
-          const mod = abilityMod(data.scores[k]);
+          const bonus = (fixedAsi(data)[k] || 0) + (data.flex[k] || 0);
+          const total = finalScore(data, k);
           kids.push(el('div', { class: 'abrow' }, [
             el('span', { class: 'ab-l', text: lbl }),
-            el('button', { class: 'step', text: '−', onclick: () => { data.scores[k] = Math.max(1, data.scores[k] - 1); render(); } }),
-            el('span', { class: 'ab-v', text: String(data.scores[k]) }),
-            el('button', { class: 'step', text: '+', onclick: () => { data.scores[k] = Math.min(30, data.scores[k] + 1); render(); } }),
-            el('span', { class: 'ab-m', text: signedStr(mod) }),
+            el('button', { class: 'step', text: '−', onclick: () => { data.base[k] = Math.max(1, data.base[k] - 1); render(); } }),
+            el('span', { class: 'ab-v', text: String(data.base[k]) }),
+            el('button', { class: 'step', text: '+', onclick: () => { data.base[k] = Math.min(20, data.base[k] + 1); render(); } }),
+            el('span', { class: 'ab-bonus', text: bonus ? `+${bonus}` : '' }),
+            el('span', { class: 'ab-total', text: `= ${total}` }),
+            el('span', { class: 'ab-m', text: signedStr(abilityMod(total)) }),
           ]));
         });
-        kids.push(el('div', { class: 'hint', text: 'Standard array is 15,14,13,12,10,8 (placed by class). Tune freely — you can change these any time.' }));
-      } else {
-        const conMod = abilityMod(data.scores.con);
-        const hp = hpFor(data.cls.hd, conMod, data.level);
+        if (spec.pool > 0) {
+          kids.push(el('div', { class: 'flex-box' }, [
+            el('div', { class: 'pick-h' }, [el('span', { text: spec.label }), el('span', { class: 'pick-left', text: `${remaining} left` })]),
+            el('div', { class: 'flex-grid' }, ABILITY_KEYS.map(([k, lbl]) => el('div', { class: 'flexrow' }, [
+              el('span', { class: 'ab-l', text: lbl }),
+              el('button', { class: 'step', text: '−', disabled: !(data.flex[k] > 0), onclick: () => { data.flex[k] = (data.flex[k] || 0) - 1; if (!data.flex[k]) delete data.flex[k]; render(); } }),
+              el('span', { class: 'ab-v', text: `+${data.flex[k] || 0}` }),
+              el('button', { class: 'step', text: '+', disabled: remaining <= 0 || (data.flex[k] || 0) >= spec.cap, onclick: () => { data.flex[k] = (data.flex[k] || 0) + 1; render(); } }),
+            ]))),
+          ]));
+        }
+        kids.push(el('div', { class: 'hint', text: 'Base uses the standard array by default; bonuses from your ' + (data.ed === '2024' ? 'background' : 'race') + ' are shown as “= total”.' }));
+      } else if (step === 4) {                            // Proficiencies
+        kids.push(el('h2', { text: 'Proficiencies' }));
+        kids.push(el('div', { class: 'prof-note', text: `Saving throws (from ${data.cls.name}): ${data.cls.saves.map((a) => a.toUpperCase()).join(' & ')} — set automatically.` }));
+        const locked = grantedSkills(data);
+        if (locked.size) kids.push(el('div', { class: 'prof-note', text: `Granted skills: ${[...locked].map((s) => SKILL_LABEL[s]).join(', ')}` }));
+        const classFrom = data.cls.skills.from === 'any' ? ALL_SKILLS.map(([id]) => id) : data.cls.skills.from;
+        kids.push(skillPicker(`${data.cls.name} skills — choose ${data.cls.skills.n}`, classFrom, data.classSkills, data.cls.skills.n, locked));
+        const free = freeSkillCount(data);
+        if (free > 0) {
+          const lockedPlusClass = new Set([...locked, ...data.classSkills]);
+          kids.push(skillPicker(`Extra proficiencies — choose ${free} (any)`, ALL_SKILLS.map(([id]) => id), data.freeSkills, free, lockedPlusClass));
+        }
+      } else {                                            // Review
+        const total = (k) => finalScore(data, k);
+        const hp = hpFor(data.cls.hd, abilityMod(total('con')), data.level);
+        const skills = new Set([...grantedSkills(data), ...data.classSkills, ...data.freeSkills]);
         kids.push(el('h2', { text: 'Review' }));
         kids.push(el('div', { class: 'review' }, [
           revRow('Name', data.name.trim() || 'New Hero'),
+          revRow(data.ed === '2024' ? 'Species' : 'Race', data.race ? data.race.name : '—'),
+          revRow('Background', data.bg ? data.bg.name : '—'),
           revRow('Class & level', `${data.cls.name} ${data.level}`),
-          revRow('Scores', ABILITY_KEYS.map(([k, l]) => `${l} ${data.scores[k]}`).join('  ·  ')),
+          revRow('Scores', ABILITY_KEYS.map(([k, l]) => `${l} ${total(k)}`).join('  ·  ')),
           revRow('Max HP', String(hp)),
+          revRow('Saves', data.cls.saves.map((a) => a.toUpperCase()).join(', ')),
+          revRow('Skills', skills.size ? [...skills].map((s) => SKILL_LABEL[s]).join(', ') : '—'),
         ]));
-        kids.push(el('div', { class: 'hint', text: 'Creates a full 5e sheet with these values. Everything stays editable afterwards.' }));
+        kids.push(el('div', { class: 'hint', text: 'Creates a full 5e sheet with these values and proficiency dots pre-filled. Everything stays editable.' }));
       }
 
       const nav = [el('button', { class: 'btn ghost', text: step === 0 ? 'Cancel' : 'Back', onclick: () => { if (step === 0) closeOverlay(); else { step--; render(); } } })];
-      if (step < steps.length - 1) nav.push(el('button', { class: 'btn primary', text: 'Next', onclick: () => { step++; render(); } }));
+      if (step < S.length - 1) nav.push(el('button', { class: 'btn primary', text: 'Next', onclick: () => { step++; render(); } }));
       else nav.push(el('button', { class: 'btn primary', text: 'Create character', onclick: () => createFromBuilder(data) }));
       kids.push(el('div', { class: 'btnrow' }, nav));
       return sheetCard(kids);
@@ -918,10 +1090,16 @@ function createFromBuilder(data) {
   const set = (id, patch) => { const v = c.values.find((x) => x.id === id); if (v) Object.assign(v, patch); };
   set('char_class', { text: data.cls.name });
   set('level', { value: data.level });
-  ABILITY_KEYS.forEach(([k, , full]) => set(full, { value: data.scores[k] }));
-  const hp = hpFor(data.cls.hd, abilityMod(data.scores.con), data.level);
+  if (data.race) set('race', { text: data.race.name });
+  if (data.bg) set('background', { text: data.bg.name });
+  if (data.race && data.race.speed) set('speed', { value: data.race.speed });
+  ABILITY_KEYS.forEach(([k, , full]) => set(full, { value: finalScore(data, k) }));
+  const hp = hpFor(data.cls.hd, abilityMod(finalScore(data, 'con')), data.level);
   set('hp_max', { value: hp });
   set('hp_current', { value: hp });
+  // Proficiency dots: class saving throws + all granted/chosen skills.
+  data.cls.saves.forEach((ab) => set(`save_${ab}_prof`, { value: true }));
+  new Set([...grantedSkills(data), ...data.classSkills, ...data.freeSkills]).forEach((id) => set(`${id}_prof`, { value: true }));
   state.save.characters.push(c);
   state.save.activeCharacterId = c.id;
   state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';

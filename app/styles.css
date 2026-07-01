@@ -236,6 +236,8 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
   max-height: 88%; overflow-y: auto;
 }
 .scrim.center .sheetcard { border-radius: 18px; margin: 16px; }
+/* Suppress the entrance animation on re-renders (only animate first mount). */
+.scrim.no-anim, .scrim.no-anim .sheetcard { animation: none; }
 @keyframes rise { from { transform: translateY(30px); } }
 .sheetcard h2 { font-family: var(--display); margin: 0 0 4px; font-size: 18px; }
 .sheetcard h2 + .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
@@ -346,6 +348,36 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 .rev-k { flex: 0 0 96px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); align-self: center; }
 .rev-v { flex: 1; font-weight: 600; font-size: 14px; }
 input[type=range] { accent-color: var(--oxblood); width: 100%; min-height: 32px; }
+.abrow .step, .flexrow .step { flex: none; width: 34px; height: 34px; border: 1px solid var(--line); background: var(--card); border-radius: 8px; font-size: 18px; line-height: 1; color: var(--oxblood); font-weight: 700; padding: 0; }
+.abrow .step:disabled, .flexrow .step:disabled { opacity: 0.35; }
+.abrow .ab-bonus { margin-left: auto; flex: 0 0 auto; min-width: 22px; text-align: right; font-size: 12px; color: var(--oxblood); font-weight: 700; }
+.abrow .ab-total { flex: 0 0 auto; min-width: 44px; text-align: right; font-family: var(--display); font-size: 17px; font-weight: 700; }
+.abrow .ab-m { flex: 0 0 auto; min-width: 30px; }
+
+/* Race/species & background pick lists */
+.pick-list { display: flex; flex-direction: column; gap: 8px; max-height: 54vh; overflow-y: auto; margin-bottom: 4px; }
+.pick { text-align: left; border: 1px solid var(--line); background: var(--card); border-radius: var(--radius); padding: 10px 12px; }
+.pick.on { border-color: var(--oxblood); box-shadow: 0 0 0 1px var(--oxblood); }
+.pick-t { font-weight: 650; font-size: 15px; }
+.pick-d { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+/* Proficiency picker */
+.prof-note { font-size: 13px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 11px; margin-bottom: 8px; }
+.pick-sec { margin: 14px 0; }
+.pick-h { display: flex; justify-content: space-between; align-items: baseline; font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); font-weight: 700; }
+.pick-left { color: var(--oxblood); }
+.skill-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.chip.on { background: var(--oxblood); color: #fff; border-color: var(--oxblood); }
+.chip:disabled { opacity: 0.4; }
+.chip.locked { background: color-mix(in srgb, var(--oxblood) 14%, var(--card)); color: var(--oxblood); border-color: var(--oxblood); opacity: 1; }
+
+/* Flexible ability boost allocator */
+.flex-box { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; margin-top: 12px; background: color-mix(in srgb, var(--oxblood) 6%, var(--card)); }
+.flex-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 14px; margin-top: 8px; }
+.flexrow { display: flex; align-items: center; gap: 6px; }
+.flexrow .ab-l { flex: 1; }
+.flexrow .ab-v { flex: 0 0 30px; text-align: center; font-size: 15px; }
 
 /* −/+ stepper for editable numbers (HP etc.) */
 .wdg .steprow { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
