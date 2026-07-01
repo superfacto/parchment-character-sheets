@@ -107,6 +107,7 @@ function renderHome() {
 
   wrap.append(el('div', { style: 'display:flex;gap:10px;margin-top:16px' }, [
     el('button', { class: 'btn ghost', onclick: openShare, text: '↥ Share / Backup' }),
+    el('button', { class: 'btn ghost', onclick: openPrivacy, text: '🔒 Privacy' }),
   ]));
 
   const container = el('div', { style: 'position:relative;flex:1;display:flex;flex-direction:column;overflow:hidden' }, [wrap]);
@@ -407,9 +408,50 @@ function openMenu() {
         el('button', { onclick: () => { closeOverlay(); state.view = 'home'; render(); } }, [el('span', { class: 'mi', text: '⌂' }), 'Characters']),
         el('button', { onclick: () => { closeOverlay(); openShare(); } }, [el('span', { class: 'mi', text: '↥' }), 'Share & backup']),
         el('button', { onclick: () => { closeOverlay(); state.mode = state.mode === 'edit' ? 'play' : 'edit'; render(); } }, [el('span', { class: 'mi', text: '✎' }), state.mode === 'edit' ? 'Exit edit mode' : 'Edit this sheet']),
+        el('button', { onclick: () => { closeOverlay(); openPrivacy(); } }, [el('span', { class: 'mi', text: '🔒' }), 'Privacy']),
         el('button', { class: 'danger', onclick: () => { const c = activeChar(); if (c) confirmDeleteCharacter(c); } }, [el('span', { class: 'mi', text: '🗑' }), 'Delete character']),
       ]),
       el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay })]),
+    ]),
+  };
+  render();
+}
+
+// --- Privacy ---------------------------------------------------------------
+function privSection(title, body) {
+  return el('div', { class: 'privsec' }, [el('h3', { text: title }), el('p', { text: body })]);
+}
+function openPrivacy() {
+  state.overlay = {
+    render: () => sheetCard([
+      el('h2', { text: '🔒 Privacy' }),
+      el('p', { class: 'desc', text: 'Short version: everything you create stays on this device. Parchment has no servers and no accounts, and it never sends your data anywhere.' }),
+
+      privSection('Where your data lives',
+        'Your characters, values, layouts, and dice results are saved only in this browser’s local storage, on this device. There is no cloud copy and no database — nobody else has your data because there is nowhere else for it to be.'),
+
+      privSection('No accounts, no servers',
+        'The app is just static files (HTML, CSS, JavaScript). There is no sign-up, no login, and no backend for it to talk to. The people who made it cannot see anything you enter.'),
+
+      privSection('No tracking, ever',
+        'No analytics, no advertising, no cookies, no fingerprinting, and no third-party scripts. Nothing about who you are or how you use the app is measured, logged, or transmitted.'),
+
+      privSection('No network calls',
+        'Once the page has loaded, the app makes no requests to any third party. It uses your device’s system fonts (no web-font CDN) and works fully offline. Installed as a home-screen app, even its own files are served from an on-device cache.'),
+
+      privSection('Sharing is entirely your choice',
+        'The only way data leaves this device is if YOU export a JSON file — a character, a full backup, or a shareable pack — and send it somewhere yourself. Those files are plain, unencrypted JSON: once you share one, it goes wherever you send it, so treat backups like any other personal file. Importing only reads a file you pick; it never uploads anything.'),
+
+      privSection('Losing your data',
+        'Because everything is local, clearing this browser’s site data — or deleting the browser / app — permanently erases your characters. There is no way to recover them unless you exported a backup. Export a JSON backup regularly; that file is your only copy.'),
+
+      privSection('Deleting your data',
+        'Delete individual characters from the character list or the sheet menu. To remove everything at once, clear this site’s data in your browser settings. Nothing is stored anywhere else, so there is nothing else to erase.'),
+
+      privSection('Open source',
+        'Parchment is open source, so you can verify all of the above yourself: github.com/superfacto/parchment-character-sheets'),
+
+      el('div', { class: 'btnrow' }, [el('button', { class: 'btn primary', text: 'Close', onclick: closeOverlay })]),
     ]),
   };
   render();
