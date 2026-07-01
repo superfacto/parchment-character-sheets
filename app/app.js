@@ -29,6 +29,7 @@ const state = {
   toast: null,
   theme: store.loadTheme(),
   rollAnim: store.loadRollAnim(),
+  rollLog: [],
 };
 
 // Selectable colour schemes. sw = [paper, ink, accent] for the picker preview.
@@ -208,9 +209,10 @@ function renderSheet() {
   const pagebar = el('div', { class: 'pagebar' });
   c.pages.forEach((p, i) => {
     pagebar.append(el('button', {
-      class: `tab ${i === state.pageIndex ? 'on' : ''}`, text: p.name,
-      onclick: () => { state.pageIndex = i; render(); },
-      ...(state.mode === 'edit' ? { ondblclick: () => renamePage(p) } : {}),
+      // In edit mode, tapping the active tab opens page options (rename/move/delete).
+      class: `tab ${i === state.pageIndex ? 'on' : ''} ${state.mode === 'edit' && i === state.pageIndex ? 'editable' : ''}`,
+      text: p.name,
+      onclick: () => { if (state.mode === 'edit' && i === state.pageIndex) openPageOptions(p, i); else { state.pageIndex = i; render(); } },
     }));
   });
   if (state.mode === 'edit') pagebar.append(el('button', { class: 'tab add', text: '+ Page', onclick: addPage }));
@@ -230,6 +232,12 @@ function renderSheet() {
   }
 
   enableSwipe(sheet, c.pages.length);
+
+  // One-time hint so the tap-to-detail/roll markers are discoverable.
+  if (state.mode === 'play' && !store.getFlag('rollhint')) {
+    store.setFlag('rollhint');
+    setTimeout(() => toast('Tap a card for details & to roll 🎲 · swipe for more pages'), 500);
+  }
   return [appbar, pagebar, sheet];
 }
 
@@ -256,10 +264,18 @@ function renderWidget(w, index, page) {
   const rolls = rollsFor(v, w);
   // Display face derived from bound value kind (§9).
   const numberHasTap = v.kind === 'number' && w.tap && w.tap !== 'none';
-  // A text value carrying rolls (a weapon/item) shows a computed roll summary
-  // on its face — name + "1d20 + 5" / "1d8 + 3" — instead of the raw string.
   const weaponFace = v.kind === 'text' && rolls.length && state.mode === 'play';
-  if (weaponFace) {
+  const statFace = w.face === 'stat' && state.mode === 'play';
+  if (statFace) {
+    // Classic 5e ability box: big signed modifier (hero) + editable score pill.
+    const mod = valueById(w.secondaryRef);
+    node.classList.add('statface');
+    node.append(el('div', { class: `statmod ${mod && displayValue(mod) === 'ERR' ? 'err' : ''}`, text: mod ? displayValue(mod) : '—' }));
+    const pill = el('button', { class: 'statscore', title: 'Edit score' }, String(v.value ?? 0));
+    pill.addEventListener('click', (e) => { e.stopPropagation(); editInline(pill, v, 'number'); });
+    node.append(pill);
+  } else if (weaponFace) {
+    // A weapon/item shows a computed roll summary — "1d20 + 5" / "1d8 + 3".
     const rows = el('div', { class: 'rollrows' });
     rolls.forEach((r) => rows.append(el('div', { class: 'rollrow' }, [
       el('span', { class: 'rn', text: r.name || 'Roll' }),
@@ -267,32 +283,41 @@ function renderWidget(w, index, page) {
     ])));
     node.append(rows);
   } else if (v.kind === 'number' && state.mode === 'play' && !numberHasTap) {
-    // No tap action → the number is directly editable inline (quick HP edits etc).
+    // Directly editable number with a −/+ stepper for quick HP-style adjustments.
     node.classList.add('num');
     const input = el('input', {
       type: 'number', value: v.value ?? 0, inputmode: 'numeric',
       onchange: (e) => { v.value = e.target.value === '' ? 0 : Number(e.target.value); commit(); },
     });
     input.addEventListener('click', (e) => e.stopPropagation());
-    node.append(input);
+    const step = (d) => (e) => { e.stopPropagation(); v.value = (Number(v.value) || 0) + d; commit(); };
+    node.append(el('div', { class: 'steprow' }, [
+      el('button', { class: 'step', text: '−', onclick: step(-1) }), input,
+      el('button', { class: 'step', text: '+', onclick: step(1) }),
+    ]));
   } else if (numberHasTap && state.mode === 'play') {
-    // Tap is reserved for the roll/detail action; editing is via the ✎ affordance
-    // (SPEC §9: "editable inline via tap-hold or an edit affordance").
+    // Tap is reserved for the roll/detail action; editing is via the ✎ affordance.
     node.append(el('div', { class: 'wv', text: String(v.value ?? 0) }));
     const pencil = el('button', { class: 'editnum', text: '✎', title: 'Edit value' });
-    pencil.addEventListener('click', (e) => { e.stopPropagation(); editNumberInline(node, v); });
+    pencil.addEventListener('click', (e) => { e.stopPropagation(); editInline(node.querySelector('.wv'), v, 'number'); });
     node.append(pencil);
   } else if (v.kind === 'text' && (w.rows || 1) >= 2 && state.mode === 'play' && w.tap === 'none') {
     const ta = el('textarea', { rows: (w.rows || 2) * 2, oninput: (e) => { v.text = e.target.value; store.save(state.save); } }, []);
     ta.value = v.text || '';
     ta.addEventListener('click', (e) => e.stopPropagation());
     node.append(ta);
+  } else if (v.kind === 'text' && state.mode === 'play' && w.tap === 'none') {
+    // Single-line text (class, notes) — editable inline via the ✎ affordance.
+    node.append(el('div', { class: 'wv text', text: v.text || '—' }));
+    const pencil = el('button', { class: 'editnum', text: '✎', title: 'Edit text' });
+    pencil.addEventListener('click', (e) => { e.stopPropagation(); editInline(node.querySelector('.wv'), v, 'text'); });
+    node.append(pencil);
   } else {
     const disp = displayValue(v);
     node.append(el('div', { class: `wv ${v.kind === 'text' ? 'text' : ''} ${disp === 'ERR' ? 'err' : ''}`, text: disp }));
   }
 
-  if (w.secondaryRef && !weaponFace) {
+  if (w.secondaryRef && !weaponFace && !statFace) {
     const s = valueById(w.secondaryRef);
     if (s) node.append(el('div', { class: 'ws', text: `${s.label}: ${displayValue(s)}` }));
   }
@@ -312,24 +337,33 @@ function renderWidget(w, index, page) {
   return node;
 }
 
+// Format a number the 5e way when the value is flagged `signed`: +3 / +0 / −1.
+function signedStr(n) { return (n >= 0 ? '+' : '−') + Math.abs(n); }
 function displayValue(v) {
-  if (v.kind === 'calc') { const r = computed.results.get(v.id); return r === undefined ? 'ERR' : String(r); }
-  if (v.kind === 'text') return v.text || '—';
-  return String(v.value ?? 0);
+  let out;
+  if (v.kind === 'calc') { const r = computed.results.get(v.id); out = r === undefined ? 'ERR' : r; }
+  else if (v.kind === 'text') return v.text || '—';
+  else out = v.value ?? 0;
+  if (out === 'ERR') return 'ERR';
+  if (v.signed && typeof out === 'number') return signedStr(out);
+  return String(out);
 }
 
-// Swap a read-only number face for an inline editor (used when the widget's
-// plain tap is reserved for a roll/detail action).
-function editNumberInline(node, v) {
-  const wv = node.querySelector('.wv');
-  if (!wv) return;
-  const input = el('input', { class: 'inlinenum', type: 'number', inputmode: 'numeric' });
-  input.value = v.value ?? 0;
-  wv.replaceWith(input);
+// Swap a read-only face for an inline editor (number or single-line text).
+function editInline(targetEl, v, kind = 'number') {
+  if (!targetEl) return;
+  const input = el('input', { class: kind === 'number' ? 'inlinenum' : 'inlinetext' });
+  if (kind === 'number') { input.type = 'number'; input.inputMode = 'numeric'; input.value = v.value ?? 0; }
+  else { input.type = 'text'; input.value = v.text || ''; }
+  targetEl.replaceWith(input);
   input.focus(); input.select();
   input.addEventListener('click', (e) => e.stopPropagation());
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
-  input.addEventListener('blur', () => { v.value = input.value === '' ? 0 : Number(input.value); commit(); }, { once: true });
+  input.addEventListener('blur', () => {
+    if (kind === 'number') v.value = input.value === '' ? 0 : Number(input.value);
+    else v.text = input.value;
+    commit();
+  }, { once: true });
 }
 
 // --- edit-mode widget chrome ----------------------------------------------
@@ -417,37 +451,55 @@ function confirmDialog({ title, message, confirmLabel = 'Confirm', onConfirm }) 
   render();
 }
 
-// A2 — Roll result
+// A2 — Roll result. d20 rolls also offer Advantage / Disadvantage (2d20kh1/kl1),
+// which the engine already supports; every roll is recorded to the roll log.
+const MODES = { normal: { label: 'Normal', sub: (e) => e }, adv: { label: 'Advantage', sub: (e) => e.replace(/\b[12]?d20\b/i, '2d20kh1') }, dis: { label: 'Disadvantage', sub: (e) => e.replace(/\b[12]?d20\b/i, '2d20kl1') } };
 function openRoll(v, expr, label) {
-  const doRoll = () => evalRoll(expr, (name) => {
+  const hasD20 = /d20/i.test(expr);
+  const roll = (e) => evalRoll(e, (name) => {
     const r = computed.results.get(name);
     if (typeof r === 'number') return r;
     throw new Error(`bad ref ${name}`);
   });
-  let result;
-  try { result = doRoll(); } catch { result = { total: 'ERR', display: 'unknown reference', parts: [] }; }
+  const doRoll = (mode) => {
+    const e = MODES[mode].sub(expr);
+    let res; try { res = roll(e); } catch { res = { total: 'ERR', display: 'unknown reference', parts: [] }; }
+    logRoll({ label, mode, expr: e, total: res.total, display: res.display });
+    return res;
+  };
+  const initial = doRoll('normal');
   state.overlay = {
     center: true,
     render() {
       const tray = el('div', { class: 'dice-tray' });
       const bigEl = el('div', { class: 'rollbig' });
       const breakEl = el('div', { class: 'rollbreak' });
-      const ctx = { tray, bigEl, breakEl, res: result, timers: [] };
-      const play = (res) => { ctx.res = res; breakEl.innerHTML = formatBreak(res); animateRoll(diceFromParts(res.parts), ctx); };
-      const rollAgain = () => { let res; try { res = doRoll(); } catch { res = { total: 'ERR', display: '—', parts: [] }; } play(res); };
-      requestAnimationFrame(() => play(result)); // element is in the DOM by now
-      return sheetCard([
-        el('h2', { text: `${label} — Roll` }),
-        el('p', { class: 'desc', text: expr }),
-        tray, bigEl, breakEl,
-        el('div', { class: 'btnrow' }, [
-          el('button', { class: 'btn primary', text: '🎲 Roll again', onclick: rollAgain }),
-          el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay }),
-        ]),
-      ]);
+      const modeEl = el('p', { class: 'desc rollmode' });
+      const ctx = { tray, bigEl, breakEl, res: initial, timers: [] };
+      const play = (res, mode) => { ctx.res = res; breakEl.innerHTML = formatBreak(res); modeEl.textContent = `${MODES[mode].sub(expr)}${mode !== 'normal' ? `  ·  ${MODES[mode].label}` : ''}`; animateRoll(diceFromParts(res.parts), ctx); };
+      const go = (mode) => play(doRoll(mode), mode);
+      requestAnimationFrame(() => play(initial, 'normal'));
+      const actions = [];
+      if (hasD20) {
+        actions.push(el('div', { class: 'btnrow' }, [
+          el('button', { class: 'btn primary', text: '⬆ Advantage', onclick: () => go('adv') }),
+          el('button', { class: 'btn primary', text: '⬇ Disadvantage', onclick: () => go('dis') }),
+        ]));
+      }
+      actions.push(el('div', { class: 'btnrow' }, [
+        el('button', { class: 'btn ghost', text: '🎲 Roll again', onclick: () => go('normal') }),
+        el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay }),
+      ]));
+      return sheetCard([el('h2', { text: `${label} — Roll` }), modeEl, tray, bigEl, breakEl, ...actions]);
     },
   };
   render();
+}
+
+// In-memory roll log (last 30 this session).
+function logRoll(entry) {
+  state.rollLog.unshift(entry);
+  if (state.rollLog.length > 30) state.rollLog.length = 30;
 }
 
 // Expand a roll breakdown into individual dice ({sides, val}) for the tray.
@@ -539,9 +591,11 @@ function openMenu() {
       el('h2', { text: 'Menu' }),
       el('div', { class: 'menu-list' }, [
         el('button', { onclick: () => { closeOverlay(); state.view = 'home'; render(); } }, [el('span', { class: 'mi', text: '⌂' }), 'Characters']),
+        el('button', { onclick: () => { closeOverlay(); openRollLog(); } }, [el('span', { class: 'mi', text: '🎲' }), 'Roll log']),
         el('button', { onclick: () => { closeOverlay(); openShare(); } }, [el('span', { class: 'mi', text: '↥' }), 'Share & backup']),
         el('button', { onclick: () => { closeOverlay(); openThemePicker(); } }, [el('span', { class: 'mi', text: '🎨' }), 'Appearance']),
         el('button', { onclick: () => { closeOverlay(); state.mode = state.mode === 'edit' ? 'play' : 'edit'; render(); } }, [el('span', { class: 'mi', text: '✎' }), state.mode === 'edit' ? 'Exit edit mode' : 'Edit this sheet']),
+        el('button', { onclick: () => { closeOverlay(); duplicateCharacter(); } }, [el('span', { class: 'mi', text: '⧉' }), 'Duplicate character']),
         el('button', { onclick: () => { closeOverlay(); openPrivacy(); } }, [el('span', { class: 'mi', text: '🔒' }), 'Privacy']),
         el('button', { class: 'danger', onclick: () => { const c = activeChar(); if (c) confirmDeleteCharacter(c); } }, [el('span', { class: 'mi', text: '🗑' }), 'Delete character']),
       ]),
@@ -549,6 +603,51 @@ function openMenu() {
     ]),
   };
   render();
+}
+
+// --- Roll log --------------------------------------------------------------
+function openRollLog() {
+  state.overlay = {
+    render() {
+      const kids = [el('h2', { text: '🎲 Roll log' }), el('p', { class: 'desc', text: 'Recent rolls this session (not saved).' })];
+      if (!state.rollLog.length) kids.push(el('div', { class: 'empty', text: 'No rolls yet.' }));
+      else {
+        const list = el('div', { class: 'roll-log' });
+        state.rollLog.forEach((r) => list.append(el('div', { class: 'log-row' }, [
+          el('div', { class: 'log-hd' }, [
+            el('span', { class: 'log-label', text: r.label }),
+            r.mode && r.mode !== 'normal' ? el('span', { class: 'log-mode', text: r.mode === 'adv' ? 'ADV' : 'DIS' }) : null,
+            el('span', { class: 'log-total', text: r.total }),
+          ]),
+          el('div', { class: 'log-break', text: r.display }),
+        ])));
+        kids.push(list);
+      }
+      const btns = [];
+      if (state.rollLog.length) btns.push(el('button', { class: 'btn ghost', text: 'Clear', onclick: () => { state.rollLog = []; render(); } }));
+      btns.push(el('button', { class: 'btn primary', text: 'Close', onclick: closeOverlay }));
+      kids.push(el('div', { class: 'btnrow' }, btns));
+      return sheetCard(kids);
+    },
+  };
+  render();
+}
+
+// --- Duplicate the active character ----------------------------------------
+function duplicateCharacter() {
+  const c = activeChar();
+  if (!c) return;
+  const copy = JSON.parse(JSON.stringify(c));
+  copy.id = newId('char');
+  copy.name = `${c.name} (copy)`;
+  copy.createdAt = new Date().toISOString();
+  copy.pages.forEach((p) => { p.id = newId('page'); p.widgets.forEach((w) => { w.id = newId('w'); }); });
+  const at = state.save.characters.findIndex((x) => x.id === c.id);
+  state.save.characters.splice(at + 1, 0, copy);
+  state.save.activeCharacterId = copy.id;
+  state.pageIndex = 0;
+  commitNow();
+  toast('Character duplicated.');
 }
 
 // --- Appearance / theme picker ---------------------------------------------
@@ -648,7 +747,16 @@ function openNewCharacter() {
   let start = 'dnd5e';
   state.overlay = {
     render() {
+      const create = () => {
+        const nm = name.trim() || (start === 'dnd5e' ? 'New Hero' : 'New Character');
+        const c = start === 'dnd5e' ? dnd5eCharacter(nm) : blankCharacter(nm);
+        state.save.characters.push(c);
+        state.save.activeCharacterId = c.id;
+        state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
+        commit();
+      };
       const nameInput = el('input', { placeholder: 'e.g. Thordak', value: name, oninput: (e) => { name = e.target.value; } });
+      nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); create(); } });
       const pick = (val) => { start = val; render(); };
       return sheetCard([
         el('h2', { text: 'New character' }),
@@ -663,14 +771,7 @@ function openNewCharacter() {
         ]),
         el('div', { class: 'btnrow' }, [
           el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay }),
-          el('button', { class: 'btn primary', text: 'Create', onclick: () => {
-            const nm = name.trim() || (start === 'dnd5e' ? 'New Hero' : 'New Character');
-            const c = start === 'dnd5e' ? dnd5eCharacter(nm) : blankCharacter(nm);
-            state.save.characters.push(c);
-            state.save.activeCharacterId = c.id;
-            state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
-            commit();
-          } }),
+          el('button', { class: 'btn primary', text: 'Create', onclick: create }),
         ]),
       ]);
     },
@@ -687,18 +788,33 @@ function addPage() {
   state.pageIndex = c.pages.length - 1;
   commit();
 }
-function renamePage(p) {
+function openPageOptions(p, i) {
   const c = activeChar();
-  const choice = prompt(`Rename page "${p.name}" (or type DELETE to remove it):`, p.name);
-  if (choice == null) return;
-  if (choice.trim().toUpperCase() === 'DELETE') {
-    if (c.pages.length <= 1) { toast('A character needs at least one page.'); return; }
-    c.pages = c.pages.filter((x) => x.id !== p.id);
-    state.pageIndex = 0;
-  } else {
-    p.name = choice.trim() || p.name;
-  }
-  commit();
+  const movePage = (delta) => {
+    const j = i + delta;
+    if (j < 0 || j >= c.pages.length) return;
+    const [pg] = c.pages.splice(i, 1);
+    c.pages.splice(j, 0, pg);
+    state.pageIndex = j;
+    state.overlay = null; // close options (indices shifted); reopen to move again
+    commit();
+  };
+  state.overlay = {
+    render: () => sheetCard([
+      el('h2', { text: `Page: ${p.name}` }),
+      el('div', { class: 'menu-list' }, [
+        el('button', { onclick: () => { const nm = prompt('Rename page', p.name); if (nm != null) { p.name = nm.trim() || p.name; commit(); } } }, [el('span', { class: 'mi', text: '✎' }), 'Rename']),
+        el('button', { disabled: i === 0, onclick: () => movePage(-1) }, [el('span', { class: 'mi', text: '◀' }), 'Move left']),
+        el('button', { disabled: i === c.pages.length - 1, onclick: () => movePage(1) }, [el('span', { class: 'mi', text: '▶' }), 'Move right']),
+        el('button', { class: 'danger', onclick: () => {
+          if (c.pages.length <= 1) { toast('A character needs at least one page.'); return; }
+          confirmDialog({ title: `Delete page “${p.name}”?`, message: 'The page and its widget layout are removed (the underlying values stay).', confirmLabel: '🗑 Delete page', onConfirm: () => { c.pages = c.pages.filter((x) => x.id !== p.id); state.pageIndex = 0; commit(); } });
+        } }, [el('span', { class: 'mi', text: '🗑' }), 'Delete page']),
+      ]),
+      el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay })]),
+    ]),
+  };
+  render();
 }
 
 // ============================================================ ADD WIDGET (B4)
@@ -707,16 +823,22 @@ function openAddWidget(page) {
   state.overlay = {
     render() {
       const c = activeChar();
-      const matches = c.values.filter((v) => (v.label + ' ' + v.id).toLowerCase().includes(query.toLowerCase()));
       const list = el('div', { class: 'menu-list' });
-      matches.slice(0, 30).forEach((v) => list.append(el('button', {
-        onclick: () => { page.widgets.push(newBoundWidget(v)); state.overlay = null; commit(); },
-      }, [el('span', { class: 'mi', text: v.kind === 'calc' ? 'ƒ' : v.kind === 'text' ? 'T' : '#' }), `${v.label}  `, el('span', { class: 'pill', text: v.id })])));
-      if (!matches.length) list.append(el('div', { class: 'empty', text: 'No values match.' }));
+      // Rebuild only the results list on keystroke (avoids a full re-render that
+      // would destroy the search input and drop focus mid-type).
+      const refreshList = () => {
+        list.innerHTML = '';
+        const matches = c.values.filter((v) => (v.label + ' ' + v.id).toLowerCase().includes(query.toLowerCase()));
+        matches.slice(0, 30).forEach((v) => list.append(el('button', {
+          onclick: () => { page.widgets.push(newBoundWidget(v)); state.overlay = null; commit(); },
+        }, [el('span', { class: 'mi', text: v.kind === 'calc' ? 'ƒ' : v.kind === 'text' ? 'T' : '#' }), `${v.label}  `, el('span', { class: 'pill', text: v.id })])));
+        if (!matches.length) list.append(el('div', { class: 'empty', text: 'No values match.' }));
+      };
+      refreshList();
 
       return sheetCard([
         el('h2', { text: 'Add widget' }),
-        el('div', { class: 'field' }, [el('input', { placeholder: 'Search values…', value: query, oninput: (e) => { query = e.target.value; render(); } })]),
+        el('div', { class: 'field' }, [el('input', { placeholder: 'Search values…', value: query, oninput: (e) => { query = e.target.value; refreshList(); } })]),
         el('div', { class: 'btnrow', style: 'margin-bottom:10px' }, [
           el('button', { class: 'btn ghost', text: '⚔ Weapon', onclick: () => addWeapon(page) }),
           el('button', { class: 'btn ghost', text: '+ Value', onclick: () => openValueEditor(null, (v) => { page.widgets.push(newBoundWidget(v)); }) }),
@@ -780,8 +902,11 @@ function openWidgetConfig(w, page) {
           el('div', { class: 'hint', text: 'rollOverride wins; otherwise the bound value’s own roll is used.' }),
         ]),
         el('div', { class: 'btnrow' }, [
-          el('button', { class: 'btn danger', text: 'Remove', onclick: () => removeWidget(w, page) }),
+          el('button', { class: 'btn ghost', text: '⧉ Duplicate', onclick: () => duplicateWidget(w, page) }),
           el('button', { class: 'btn ghost', text: 'Edit value…', onclick: () => v && openValueEditor(v) }),
+        ]),
+        el('div', { class: 'btnrow' }, [
+          el('button', { class: 'btn danger', text: 'Remove', onclick: () => removeWidget(w, page) }),
           el('button', { class: 'btn primary', text: 'Done', onclick: closeOverlay }),
         ]),
       ]);
@@ -793,14 +918,20 @@ function removeWidget(w, page) {
   page.widgets = page.widgets.filter((x) => x.id !== w.id);
   closeOverlay(); commit();
 }
+function duplicateWidget(w, page) {
+  const copy = { ...JSON.parse(JSON.stringify(w)), id: newId('w') };
+  const at = page.widgets.findIndex((x) => x.id === w.id);
+  page.widgets.splice(at + 1, 0, copy);
+  closeOverlay(); commit();
+}
 
 // ============================================================ VALUE EDITOR (B3)
 const SLUG_RE = /^[a-z][a-z0-9_]*$/;
 function openValueEditor(existing, onCreate) {
   const c = activeChar();
   const creating = !existing;
-  // working copy
-  const v = existing || { id: '', label: '', kind: 'number', value: 0, text: '', formula: '', description: '', group: '' };
+  // Edit a deep clone so "Cancel" truly discards; committed back on Save.
+  const v = existing ? JSON.parse(JSON.stringify(existing)) : { id: '', label: '', kind: 'number', value: 0, text: '', formula: '', description: '', group: '' };
   // Normalise to the multi-roll array (migrating a legacy single `roll`).
   if (!Array.isArray(v.rolls)) v.rolls = v.roll ? [{ name: '', expr: v.roll }] : [];
   let idDraft = v.id;
@@ -828,7 +959,16 @@ function openValueEditor(existing, onCreate) {
       const kindFields = el('div');
       if (v.kind === 'number') kindFields.append(field('Value', el('input', { type: 'number', value: v.value ?? 0, oninput: (e) => { v.value = Number(e.target.value); } })));
       if (v.kind === 'text') kindFields.append(field('Text', el('input', { value: v.text || '', oninput: (e) => { v.text = e.target.value; } })));
-      if (v.kind === 'calc') kindFields.append(field('Formula (no dice)', el('input', { value: v.formula || '', placeholder: '10 + dex_mod', oninput: (e) => { v.formula = e.target.value; render(); } }), err ? `ERR — ${err}` : 'Deterministic. Other values may depend on this.'));
+      if (v.kind === 'calc') {
+        // Build the formula field by hand so keystrokes update only the ERR hint
+        // (not a full re-render, which would destroy the input and drop focus).
+        const fInput = el('input', { value: v.formula || '', placeholder: '10 + dex_mod' });
+        const fHint = el('div', { class: 'hint' });
+        const upd = () => { const e2 = validate(); fHint.textContent = e2 ? `ERR — ${e2}` : 'Deterministic. Other values may depend on this.'; fHint.classList.toggle('err', !!e2); };
+        fInput.addEventListener('input', () => { v.formula = fInput.value; upd(); });
+        upd();
+        kindFields.append(el('div', { class: 'field' }, [el('label', { text: 'Formula (no dice)' }), fInput, fHint]));
+      }
 
       return sheetCard([
         el('h2', { text: creating ? 'New value' : 'Edit value' }),
@@ -876,6 +1016,9 @@ function openValueEditor(existing, onCreate) {
           if (onCreate) { onCreate(v); }
           return;
         }
+        // Write the edited clone back over the live value (id is immutable).
+        const at = c.values.findIndex((x) => x.id === v.id);
+        if (at >= 0) c.values[at] = v; else c.values.push(v);
         closeOverlay(); commit();
       }
     },
@@ -887,7 +1030,13 @@ function field(label, input, hint) {
 }
 function deleteValue(v) {
   const c = activeChar();
-  const dependents = c.values.filter((x) => x.kind === 'calc' && new RegExp(`\\b${v.id}\\b`).test(x.formula || ''));
+  const rx = new RegExp(`\\b${v.id}\\b`);
+  // Anything that references this id: calc formulas, rolls, or legacy roll.
+  const dependents = c.values.filter((x) => x.id !== v.id && (
+    (x.kind === 'calc' && rx.test(x.formula || '')) ||
+    (x.rolls || []).some((r) => rx.test(r.expr || '')) ||
+    rx.test(x.roll || '')
+  ));
   confirmDialog({
     title: `Delete value “${v.label || v.id}”?`,
     message: dependents.length

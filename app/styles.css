@@ -285,6 +285,42 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 .rolledit .re-in { flex: 1; width: auto; }
 .rolledit .rrm { flex: none; width: 40px; height: 44px; padding: 0; border: 1px solid var(--line); background: var(--card); border-radius: var(--radius); color: var(--oxblood); font-size: 20px; line-height: 1; }
 
+/* Classic 5e ability box: big signed modifier + editable score pill */
+.wdg.statface { align-items: center; text-align: center; }
+.wdg.statface .wl { align-self: center; }
+.statmod { font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1; margin: 2px 0 8px; }
+.statmod.err { color: var(--oxblood); font-size: 22px; }
+.statscore { border: 1.5px solid var(--border); background: var(--paper); border-radius: 999px; min-width: 48px; height: 34px; padding: 0 12px; font-family: var(--display); font-size: 17px; font-weight: 650; color: var(--ink); }
+.statscore:active { transform: scale(0.95); }
+.statface input.inlinenum { width: 72px; text-align: center; font-size: 22px; border-bottom: 2px solid var(--oxblood); margin: 0 auto; }
+
+/* −/+ stepper for editable numbers (HP etc.) */
+.wdg .steprow { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
+.wdg .steprow input { flex: 1; width: auto; text-align: center; }
+.wdg .step { flex: none; width: 42px; height: 44px; border: 1.5px solid var(--border); background: var(--paper); border-radius: 8px; font-size: 22px; line-height: 1; color: var(--oxblood); font-weight: 700; }
+.wdg .step:active { transform: scale(0.92); }
+
+/* Lighter edit affordance (ghost icon, not a boxed button) */
+.wdg .editnum { border: 0; background: transparent; padding: 5px; font-size: 14px; color: var(--muted); opacity: 0.55; }
+.wdg .editnum:active { opacity: 1; transform: none; }
+.wdg input.inlinetext { width: 100%; border: 0; border-bottom: 2px solid var(--oxblood); background: transparent; font-size: 18px; color: var(--ink); padding: 0; margin-top: 2px; }
+.wdg input.inlinetext:focus { outline: none; }
+
+/* Editable page tab (tap for options in edit mode) */
+.tab.editable::after { content: " ⋯"; opacity: 0.55; }
+
+/* Roll mode line + roll log */
+.rollmode { text-align: center; font-family: var(--mono); }
+.roll-log { display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow-y: auto; margin: 6px 0 12px; }
+.log-row { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 8px 10px; }
+.log-hd { display: flex; align-items: baseline; gap: 8px; }
+.log-label { font-weight: 650; font-size: 14px; }
+.log-mode { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; color: #fff; background: var(--oxblood); border-radius: 4px; padding: 1px 5px; align-self: center; }
+.log-total { margin-left: auto; font-family: var(--display); font-size: 20px; font-weight: 700; color: var(--oxblood); }
+.log-break { font-family: var(--mono); font-size: 12px; color: var(--muted); margin-top: 3px; word-break: break-word; }
+
+.menu-list button:disabled { opacity: 0.4; }
+
 /* Detail overlay */
 .formula { font-family: var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; font-size: 15px; }
 .formula .err { color: var(--oxblood); }

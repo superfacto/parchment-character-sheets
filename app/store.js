@@ -21,6 +21,14 @@ export function saveRollAnim(on) {
   try { localStorage.setItem(ANIM_KEY, on ? 'on' : 'off'); } catch { /* private mode */ }
 }
 
+// Generic one-shot flags (e.g. "has the first-run hint been shown?").
+export function getFlag(k) {
+  try { return localStorage.getItem('parchment.flag.' + k) === '1'; } catch { return false; }
+}
+export function setFlag(k) {
+  try { localStorage.setItem('parchment.flag.' + k, '1'); } catch { /* private mode */ }
+}
+
 export function emptySave() {
   return { schemaVersion: SCHEMA_VERSION, exportedAt: null, activeCharacterId: null, characters: [] };
 }

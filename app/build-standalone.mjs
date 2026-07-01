@@ -25,8 +25,8 @@ const app = strip(read('app.js'));
 // app.js uses `import * as store` — recreate that namespace object explicitly.
 const storeNamespace = `
 const store = { SCHEMA_VERSION, emptySave, load, save, saveNow, loadTheme, saveTheme,
-  loadRollAnim, saveRollAnim, exportCharacter, exportEverything, exportPack, download,
-  analyzeImport, importSaveFile, importPackInto };
+  loadRollAnim, saveRollAnim, getFlag, setFlag, exportCharacter, exportEverything,
+  exportPack, download, analyzeImport, importSaveFile, importPackInto };
 `;
 
 const js = [

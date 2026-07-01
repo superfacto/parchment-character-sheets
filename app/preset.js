@@ -31,28 +31,28 @@ export function dnd5eCharacter(name = 'New Hero') {
 
   values.push({ id: 'char_class', label: 'Class', kind: 'text', text: 'Fighter', group: 'Bio' });
   values.push({ id: 'level', label: 'Level', kind: 'number', value: 1, group: 'Bio' });
-  values.push({ id: 'proficiency_bonus', label: 'Prof', kind: 'calc', formula: '2 + floor((level - 1) / 4)', group: 'Bio' });
+  values.push({ id: 'proficiency_bonus', label: 'Prof', kind: 'calc', formula: '2 + floor((level - 1) / 4)', signed: true, group: 'Bio' });
 
   for (const [id, label] of ABILITIES) {
     values.push({ id, label, kind: 'number', value: 10, group: 'Abilities' });
   }
   for (const [id, label, ab] of ABILITIES.map((a) => [`${a[2]}_mod`, `${a[2].toUpperCase()} Mod`, a[0]])) {
-    values.push({ id, label, kind: 'calc', formula: `floor((${ab} - 10) / 2)`, group: 'Abilities' });
+    values.push({ id, label, kind: 'calc', formula: `floor((${ab} - 10) / 2)`, signed: true, group: 'Abilities' });
   }
 
   values.push({ id: 'armor_class', label: 'AC', kind: 'calc', formula: '10 + dex_mod', group: 'Combat' });
-  values.push({ id: 'initiative', label: 'Initiative', kind: 'calc', formula: 'dex_mod', group: 'Combat' });
+  values.push({ id: 'initiative', label: 'Initiative', kind: 'calc', formula: 'dex_mod', signed: true, group: 'Combat' });
   values.push({ id: 'hp_current', label: 'HP', kind: 'number', value: 10, group: 'Combat' });
   values.push({ id: 'hp_max', label: 'Max HP', kind: 'number', value: 10, group: 'Combat' });
 
   // Saving throws — raw ability mods in v1 (proficiency deferred to v1.1).
   for (const [, , ab] of ABILITIES) {
-    values.push({ id: `save_${ab}`, label: `${ab.toUpperCase()} Save`, kind: 'calc', formula: `${ab}_mod`, group: 'Saves' });
+    values.push({ id: `save_${ab}`, label: `${ab.toUpperCase()} Save`, kind: 'calc', formula: `${ab}_mod`, signed: true, group: 'Saves' });
   }
 
   // Skills — raw ability mods.
   for (const [id, label, ab] of SKILLS) {
-    values.push({ id, label, kind: 'calc', formula: `${ab}_mod`, group: 'Skills' });
+    values.push({ id, label, kind: 'calc', formula: `${ab}_mod`, signed: true, group: 'Skills' });
   }
 
   // Example weapons demonstrating the roll model.
@@ -68,12 +68,12 @@ export function dnd5eCharacter(name = 'New Hero') {
       id: newId('page'), name: 'Core',
       widgets: [
         w({ ref: 'char_class', secondaryRef: 'level', cols: 2, tap: 'none' }),
-        w({ ref: 'strength', secondaryRef: 'str_mod', tap: 'detail', rollOverride: '1d20 + str_mod' }),
-        w({ ref: 'dexterity', secondaryRef: 'dex_mod', tap: 'detail', rollOverride: '1d20 + dex_mod' }),
-        w({ ref: 'constitution', secondaryRef: 'con_mod', tap: 'detail', rollOverride: '1d20 + con_mod' }),
-        w({ ref: 'intelligence', secondaryRef: 'int_mod', tap: 'detail', rollOverride: '1d20 + int_mod' }),
-        w({ ref: 'wisdom', secondaryRef: 'wis_mod', tap: 'detail', rollOverride: '1d20 + wis_mod' }),
-        w({ ref: 'charisma', secondaryRef: 'cha_mod', tap: 'detail', rollOverride: '1d20 + cha_mod' }),
+        w({ ref: 'strength', secondaryRef: 'str_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + str_mod' }),
+        w({ ref: 'dexterity', secondaryRef: 'dex_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + dex_mod' }),
+        w({ ref: 'constitution', secondaryRef: 'con_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + con_mod' }),
+        w({ ref: 'intelligence', secondaryRef: 'int_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + int_mod' }),
+        w({ ref: 'wisdom', secondaryRef: 'wis_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + wis_mod' }),
+        w({ ref: 'charisma', secondaryRef: 'cha_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + cha_mod' }),
         w({ ref: 'proficiency_bonus', tap: 'detail' }),
         w({ ref: 'armor_class', tap: 'detail' }),
         w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, tap: 'none' }),
