@@ -2,7 +2,24 @@
 import { newId } from './preset.js';
 
 const KEY = 'parchment.savefile.v1';
+const THEME_KEY = 'parchment.theme';
 export const SCHEMA_VERSION = 1;
+
+// App appearance preference (separate from character data).
+export function loadTheme() {
+  try { return localStorage.getItem(THEME_KEY) || 'parchment'; } catch { return 'parchment'; }
+}
+export function saveTheme(id) {
+  try { localStorage.setItem(THEME_KEY, id); } catch { /* private mode */ }
+}
+
+const ANIM_KEY = 'parchment.rollAnim';
+export function loadRollAnim() {
+  try { return localStorage.getItem(ANIM_KEY) !== 'off'; } catch { return true; }
+}
+export function saveRollAnim(on) {
+  try { localStorage.setItem(ANIM_KEY, on ? 'on' : 'off'); } catch { /* private mode */ }
+}
 
 export function emptySave() {
   return { schemaVersion: SCHEMA_VERSION, exportedAt: null, activeCharacterId: null, characters: [] };

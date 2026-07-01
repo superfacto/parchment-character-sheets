@@ -11,16 +11,41 @@
 /* Parchment — aged paper + ink + a single oxblood accent (SPEC §8.3).
    Bold in one place, quiet everywhere else. System font stack, no CDN. */
 :root {
-  --ink: #2a2622;
-  --paper: #efe9dd;
-  --card: #fdfcfa;
-  --line: #c9c0b0;
-  --muted: #8a8377;
+  /* Default "5e Sheet" scheme — warm cream paper, near-black ink, boxed dark
+     rules, single oxblood accent. Alternate schemes override these below via
+     [data-theme=...] on <html>. */
+  --ink: #221c12;
+  --paper: #ece3cf;
+  --card: #fbf6ea;
+  --line: #c2b49a;
+  --muted: #857a63;
   --oxblood: #7a2b2b;
+  --surround: #c7ba9e;              /* area around the phone frame */
+  --sheen: rgba(255,255,255,0.5);   /* top gloss inside the frame */
+  /* Heavier, darker box border — derived from ink so it adapts per theme. */
+  --border: color-mix(in srgb, var(--ink) 26%, var(--line));
   --radius: 9px;
   --gap: 10px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+/* --- Alternate colour schemes (user-selectable in Settings) --------------- */
+[data-theme="midnight"] {
+  --ink: #ece6da; --paper: #221d19; --card: #2c2622; --line: #42382f; --muted: #9c8f7f;
+  --oxblood: #d0704a; --surround: #0e0b09; --sheen: rgba(255,255,255,0.04);
+}
+[data-theme="forest"] {
+  --ink: #212a1d; --paper: #e7ece0; --card: #f7faf2; --line: #bac6aa; --muted: #78846b;
+  --oxblood: #436f3c; --surround: #c7cfbe;
+}
+[data-theme="ocean"] {
+  --ink: #1c2530; --paper: #e5ecf0; --card: #f4f9fb; --line: #a9bac6; --muted: #6c7c86;
+  --oxblood: #256b7a; --surround: #bcc7cf;
+}
+[data-theme="rose"] {
+  --ink: #2c2125; --paper: #f3e8eb; --card: #fdf7f9; --line: #d7bac2; --muted: #8a757e;
+  --oxblood: #a63b5e; --surround: #dcc7cc;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -28,7 +53,7 @@ html, body { margin: 0; height: 100%; }
 body {
   font-family: var(--font);
   color: var(--ink);
-  background: #d9d2c4;
+  background: var(--surround);
   overscroll-behavior: none;
 }
 button {
@@ -53,7 +78,7 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
   flex-direction: column;
   background: var(--paper);
   background-image:
-    radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.5), transparent 60%);
+    radial-gradient(120% 120% at 50% 0%, var(--sheen), transparent 60%);
   box-shadow: 0 10px 40px rgba(0,0,0,0.25);
   overflow: hidden;
 }
@@ -123,7 +148,7 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 .wdg {
   position: relative;
   background: var(--card);
-  border: 1px solid var(--line);
+  border: 1.5px solid var(--border);
   border-radius: var(--radius);
   min-height: 64px;
   padding: 10px 12px;
@@ -198,9 +223,55 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 .sheetcard h2 + .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
 
 /* Roll result */
-.rollbig { font-size: 52px; font-weight: 700; text-align: center; color: var(--oxblood); margin: 8px 0; }
-.rollbreak { font-family: var(--mono); text-align: center; font-size: 15px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.rollbig { font-size: 52px; font-weight: 700; text-align: center; color: var(--oxblood); margin: 4px 0 8px; min-height: 56px; font-variant-numeric: tabular-nums; transition: opacity 0.15s ease; }
+.rollbig.rolling { opacity: 0.4; }
+.rollbreak { font-family: var(--mono); text-align: center; font-size: 15px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; transition: opacity 0.25s ease; }
+.rollbreak.pending { opacity: 0; }
 .rollbreak .op { color: var(--muted); }
+
+/* Dice tray + tumbling dice (cosmetic; the value is the engine's real roll) */
+.dice-tray { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; align-items: center; min-height: 60px; margin: 12px 0 6px; }
+.die {
+  width: 56px; height: 56px; border-radius: 14px; position: relative;
+  display: grid; place-items: center; background: var(--card);
+  border: 2.5px solid var(--oxblood); color: var(--ink); font-weight: 700;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.12);   /* flat, single soft shadow */
+}
+.die .dieface { font-size: 25px; font-variant-numeric: tabular-nums; line-height: 1; }
+.die .dielabel { position: absolute; bottom: 3px; right: 6px; font-size: 9px; font-weight: 700; color: var(--muted); }
+.die.rolling { animation: die-wiggle 0.32s ease-in-out infinite; }
+.die.settle { animation: die-pop 0.28s ease; }
+@keyframes die-wiggle {   /* quick flat jitter, like the Google dice roller */
+  0%   { transform: rotate(0deg) translateY(0); }
+  20%  { transform: rotate(-12deg) translateY(-3px); }
+  40%  { transform: rotate(10deg) translateY(0); }
+  60%  { transform: rotate(-7deg) translateY(-2px); }
+  80%  { transform: rotate(5deg) translateY(0); }
+  100% { transform: rotate(0deg) translateY(0); }
+}
+@keyframes die-pop { 0% { transform: scale(0.82); } 60% { transform: scale(1.13); } 100% { transform: scale(1); } }
+@media (prefers-reduced-motion: reduce) { .die.rolling { animation: none; } }
+
+/* Appearance / theme picker */
+.theme-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 6px; }
+.theme-opt { display: flex; align-items: center; gap: 10px; text-align: left; border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 10px; min-height: 60px; }
+.theme-opt.on { border-color: var(--oxblood); box-shadow: 0 0 0 1px var(--oxblood); }
+.theme-opt:active { transform: scale(0.98); }
+.theme-preview { flex: none; width: 40px; height: 40px; border-radius: 9px; overflow: hidden; display: flex; border: 1px solid rgba(0,0,0,0.12); }
+.theme-preview i { flex: 1; }
+.theme-nm { font-weight: 600; font-size: 14px; }
+.theme-opt .chk { margin-left: auto; color: var(--oxblood); font-weight: 700; }
+
+/* Settings toggle switch */
+.toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--line); }
+.switch { flex: none; width: 52px; height: 30px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); position: relative; padding: 0; transition: background 0.15s ease, border-color 0.15s ease; }
+.switch .knob { position: absolute; top: 2px; left: 2px; width: 24px; height: 24px; border-radius: 50%; background: var(--muted); transition: left 0.16s ease, background 0.16s ease; }
+.switch.on { background: var(--oxblood); border-color: var(--oxblood); }
+.switch.on .knob { left: 24px; background: #fff; }
+
+/* Detail overlay — the value shown big */
+.detail-val { font-size: 42px; font-weight: 700; text-align: center; color: var(--oxblood); margin: 4px 0 10px; font-variant-numeric: tabular-nums; word-break: break-word; }
+.detail-val.err { font-size: 24px; }
 
 /* Detail overlay */
 .formula { font-family: var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; font-size: 15px; }
@@ -232,9 +303,10 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 
 /* Character list (home) */
 .home { padding: 14px; overflow-y: auto; flex: 1; }
+.home-hd { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
 .home h1 { font-size: 22px; margin: 6px 4px 2px; }
 .home .tagline { color: var(--muted); font-size: 13px; margin: 0 4px 16px; }
-.warnbanner { background: #f6ecda; border: 1px solid #d8c48f; color: #7a5a1e; border-radius: var(--radius); padding: 10px 12px; font-size: 12px; margin-bottom: 14px; display: flex; gap: 8px; }
+.warnbanner { background: color-mix(in srgb, var(--oxblood) 10%, var(--card)); border: 1px solid color-mix(in srgb, var(--oxblood) 30%, var(--line)); color: color-mix(in srgb, var(--ink) 72%, var(--oxblood)); border-radius: var(--radius); padding: 10px 12px; font-size: 12px; margin-bottom: 14px; display: flex; gap: 8px; }
 .charrow { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
 .charrow.active { border-color: var(--oxblood); }
 .charrow .activedot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
@@ -698,12 +770,12 @@ function dnd5eCharacter(name = 'New Hero') {
       id: newId('page'), name: 'Core',
       widgets: [
         w({ ref: 'char_class', secondaryRef: 'level', cols: 2, tap: 'none' }),
-        w({ ref: 'strength', secondaryRef: 'str_mod', tap: 'roll', rollOverride: '1d20 + str_mod' }),
-        w({ ref: 'dexterity', secondaryRef: 'dex_mod', tap: 'roll', rollOverride: '1d20 + dex_mod' }),
-        w({ ref: 'constitution', secondaryRef: 'con_mod', tap: 'roll', rollOverride: '1d20 + con_mod' }),
-        w({ ref: 'intelligence', secondaryRef: 'int_mod', tap: 'roll', rollOverride: '1d20 + int_mod' }),
-        w({ ref: 'wisdom', secondaryRef: 'wis_mod', tap: 'roll', rollOverride: '1d20 + wis_mod' }),
-        w({ ref: 'charisma', secondaryRef: 'cha_mod', tap: 'roll', rollOverride: '1d20 + cha_mod' }),
+        w({ ref: 'strength', secondaryRef: 'str_mod', tap: 'detail', rollOverride: '1d20 + str_mod' }),
+        w({ ref: 'dexterity', secondaryRef: 'dex_mod', tap: 'detail', rollOverride: '1d20 + dex_mod' }),
+        w({ ref: 'constitution', secondaryRef: 'con_mod', tap: 'detail', rollOverride: '1d20 + con_mod' }),
+        w({ ref: 'intelligence', secondaryRef: 'int_mod', tap: 'detail', rollOverride: '1d20 + int_mod' }),
+        w({ ref: 'wisdom', secondaryRef: 'wis_mod', tap: 'detail', rollOverride: '1d20 + wis_mod' }),
+        w({ ref: 'charisma', secondaryRef: 'cha_mod', tap: 'detail', rollOverride: '1d20 + cha_mod' }),
         w({ ref: 'proficiency_bonus', tap: 'detail' }),
         w({ ref: 'armor_class', tap: 'detail' }),
         w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, tap: 'none' }),
@@ -713,23 +785,23 @@ function dnd5eCharacter(name = 'New Hero') {
       id: newId('page'), name: 'Combat',
       widgets: [
         w({ ref: 'armor_class', tap: 'detail' }),
-        w({ ref: 'initiative', tap: 'roll', rollOverride: '1d20 + initiative' }),
+        w({ ref: 'initiative', tap: 'detail', rollOverride: '1d20 + initiative' }),
         w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, tap: 'none' }),
         w({ kind: 'label', title: 'Saving Throws', cols: 2 }),
-        w({ ref: 'save_str', tap: 'roll', rollOverride: '1d20 + save_str' }),
-        w({ ref: 'save_dex', tap: 'roll', rollOverride: '1d20 + save_dex' }),
-        w({ ref: 'save_con', tap: 'roll', rollOverride: '1d20 + save_con' }),
-        w({ ref: 'save_wis', tap: 'roll', rollOverride: '1d20 + save_wis' }),
+        w({ ref: 'save_str', tap: 'detail', rollOverride: '1d20 + save_str' }),
+        w({ ref: 'save_dex', tap: 'detail', rollOverride: '1d20 + save_dex' }),
+        w({ ref: 'save_con', tap: 'detail', rollOverride: '1d20 + save_con' }),
+        w({ ref: 'save_wis', tap: 'detail', rollOverride: '1d20 + save_wis' }),
         w({ kind: 'label', title: 'Attacks', cols: 2 }),
-        w({ ref: 'longsword', cols: 2, tap: 'roll' }),
-        w({ ref: 'shortbow', cols: 2, tap: 'roll' }),
+        w({ ref: 'longsword', cols: 2, tap: 'detail' }),
+        w({ ref: 'shortbow', cols: 2, tap: 'detail' }),
       ],
     },
     {
       id: newId('page'), name: 'Skills',
       widgets: [
         w({ kind: 'label', title: 'Skills (roll a check)', cols: 2 }),
-        ...SKILLS.map(([id]) => w({ ref: id, tap: 'roll', rollOverride: `1d20 + ${id}` })),
+        ...SKILLS.map(([id]) => w({ ref: id, tap: 'detail', rollOverride: `1d20 + ${id}` })),
       ],
     },
   ];
@@ -759,7 +831,24 @@ function blankCharacter(name = 'New Character') {
 // Persistence & sharing (SPEC §7). Local save-file blob + JSON export/import.
 
 const KEY = 'parchment.savefile.v1';
+const THEME_KEY = 'parchment.theme';
 const SCHEMA_VERSION = 1;
+
+// App appearance preference (separate from character data).
+function loadTheme() {
+  try { return localStorage.getItem(THEME_KEY) || 'parchment'; } catch { return 'parchment'; }
+}
+function saveTheme(id) {
+  try { localStorage.setItem(THEME_KEY, id); } catch { /* private mode */ }
+}
+
+const ANIM_KEY = 'parchment.rollAnim';
+function loadRollAnim() {
+  try { return localStorage.getItem(ANIM_KEY) !== 'off'; } catch { return true; }
+}
+function saveRollAnim(on) {
+  try { localStorage.setItem(ANIM_KEY, on ? 'on' : 'off'); } catch { /* private mode */ }
+}
 
 function emptySave() {
   return { schemaVersion: SCHEMA_VERSION, exportedAt: null, activeCharacterId: null, characters: [] };
@@ -917,8 +1006,9 @@ function importPackInto(char, pack, { mode = 'suffix', addPages = true } = {}) {
 }
 
 
-const store = { SCHEMA_VERSION, emptySave, load, save, saveNow, exportCharacter,
-  exportEverything, exportPack, download, analyzeImport, importSaveFile, importPackInto };
+const store = { SCHEMA_VERSION, emptySave, load, save, saveNow, loadTheme, saveTheme,
+  loadRollAnim, saveRollAnim, exportCharacter, exportEverything, exportPack, download,
+  analyzeImport, importSaveFile, importPackInto };
 
 // ===== app.js =====
 // Parchment — app shell & UI (SPEC groups A/B/C). Vanilla JS, no framework.
@@ -947,7 +1037,25 @@ const state = {
   pageIndex: 0,
   overlay: null,       // { type, ... }
   toast: null,
+  theme: store.loadTheme(),
+  rollAnim: store.loadRollAnim(),
 };
+
+// Selectable colour schemes. sw = [paper, ink, accent] for the picker preview.
+const THEMES = [
+  { id: 'parchment', name: '5e Sheet', sw: ['#ece3cf', '#221c12', '#7a2b2b'] },
+  { id: 'midnight',  name: 'Midnight',  sw: ['#221d19', '#ece6da', '#d0704a'] },
+  { id: 'forest',    name: 'Forest',    sw: ['#e7ece0', '#212a1d', '#436f3c'] },
+  { id: 'ocean',     name: 'Ocean',     sw: ['#e5ecf0', '#1c2530', '#256b7a'] },
+  { id: 'rose',      name: 'Rose',      sw: ['#f3e8eb', '#2c2125', '#a63b5e'] },
+];
+function applyTheme(id) {
+  const t = THEMES.find((x) => x.id === id) || THEMES[0];
+  if (t.id === 'parchment') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t.id;
+  const meta = document.querySelector('meta[name=theme-color]');
+  if (meta) meta.content = t.sw[2];   // accent drives the browser UI colour
+}
 
 function activeChar() {
   return state.save.characters.find((c) => c.id === state.save.activeCharacterId) || null;
@@ -997,8 +1105,13 @@ function render() {
 // ======================================================================= HOME
 function renderHome() {
   const wrap = el('div', { class: 'home' });
-  wrap.append(el('h1', { text: 'Parchment' }));
-  wrap.append(el('p', { class: 'tagline', text: 'Your character sheets — on paper, offline.' }));
+  wrap.append(el('div', { class: 'home-hd' }, [
+    el('div', {}, [
+      el('h1', { text: 'Parchment' }),
+      el('p', { class: 'tagline', text: 'Your character sheets — on paper, offline.' }),
+    ]),
+    el('button', { class: 'iconbtn', title: 'Appearance', onclick: openThemePicker }, '🎨'),
+  ]));
   wrap.append(el('div', { class: 'warnbanner' }, [
     el('span', { text: '⚠' }),
     el('span', { text: 'Characters live only in this browser. Clearing site data erases them — export a JSON backup to keep them safe.' }),
@@ -1140,15 +1253,15 @@ function renderWidget(w, index, page) {
     if (s) node.append(el('div', { class: 'ws', text: `${s.label}: ${displayValue(s)}` }));
   }
 
-  // Tap markers
+  // Tap markers. Default tap opens the detail panel (which carries a Roll
+  // button when the value/widget has a roll); tap:'roll' is the opt-in insta-roll.
   if (state.mode === 'play' && w.tap && w.tap !== 'none') {
     const rollExpr = w.rollOverride || v.roll;
-    if (w.tap === 'roll' && rollExpr) node.append(el('div', { class: 'marker', text: w.rollOverride ? '⬡' : '⚔' }));
-    if (w.tap === 'detail') node.append(el('div', { class: 'marker', text: 'ⓘ' }));
+    node.append(el('div', { class: 'marker', text: rollExpr ? '🎲' : 'ⓘ' }));
     node.classList.add('tappable');
     node.addEventListener('click', () => {
       if (w.tap === 'roll' && rollExpr) openRoll(v, rollExpr, label);
-      else if (w.tap === 'detail') openDetail(v, label);
+      else openDetail(v, label, rollExpr);
     });
   }
 
@@ -1183,9 +1296,7 @@ function decorateEdit(node, w, index, page) {
   // replace any live input face with a static one in edit mode
   const handle = el('div', { class: 'drag', text: '⠿', title: 'Drag to reorder' });
   node.prepend(handle);
-  const size = w.cols >= 2 && w.rows >= 3 ? 'L' : w.cols >= 2 ? 'M' : 'S';
   node.append(el('div', { class: 'editrow' }, [
-    el('span', { class: 'szchip', text: size }),
     el('button', { class: 'cfg', text: 'Edit', onclick: (e) => { e.stopPropagation(); openWidgetConfig(w, page); } }),
   ]));
   enableDragReorder(node, handle, index, page);
@@ -1275,16 +1386,19 @@ function openRoll(v, expr, label) {
   state.overlay = {
     center: true,
     render() {
-      let res = result;
-      const bigEl = el('div', { class: 'rollbig', text: res.total });
-      const breakEl = el('div', { class: 'rollbreak', html: formatBreak(res) });
-      const rerender = () => { try { res = doRoll(); } catch { res = { total: 'ERR', display: '—', parts: [] }; } bigEl.textContent = res.total; breakEl.innerHTML = formatBreak(res); };
+      const tray = el('div', { class: 'dice-tray' });
+      const bigEl = el('div', { class: 'rollbig' });
+      const breakEl = el('div', { class: 'rollbreak' });
+      const ctx = { tray, bigEl, breakEl, res: result, timers: [] };
+      const play = (res) => { ctx.res = res; breakEl.innerHTML = formatBreak(res); animateRoll(diceFromParts(res.parts), ctx); };
+      const rollAgain = () => { let res; try { res = doRoll(); } catch { res = { total: 'ERR', display: '—', parts: [] }; } play(res); };
+      requestAnimationFrame(() => play(result)); // element is in the DOM by now
       return sheetCard([
         el('h2', { text: `${label} — Roll` }),
         el('p', { class: 'desc', text: expr }),
-        bigEl, breakEl,
+        tray, bigEl, breakEl,
         el('div', { class: 'btnrow' }, [
-          el('button', { class: 'btn primary', text: '↻ Roll again', onclick: rerender }),
+          el('button', { class: 'btn primary', text: '🎲 Roll again', onclick: rollAgain }),
           el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay }),
         ]),
       ]);
@@ -1292,18 +1406,63 @@ function openRoll(v, expr, label) {
   };
   render();
 }
+
+// Expand a roll breakdown into individual dice ({sides, val}) for the tray.
+function diceFromParts(parts) {
+  const out = [];
+  for (const p of (parts || [])) {
+    if (!p.rolls) continue;
+    const m = /d(\d+)/i.exec(p.label);
+    const sides = m ? +m[1] : 6;
+    p.rolls.forEach((val) => out.push({ sides, val }));
+  }
+  return out;
+}
+
+// Flat dice that wiggle while the face number flickers, then settle on the real
+// value (the value is the engine's; the flicker is cosmetic). Honours the
+// user's animation toggle and the OS reduced-motion setting.
+function animateRoll(dice, ctx) {
+  ctx.timers.forEach((t) => { clearInterval(t); clearTimeout(t); });
+  ctx.timers = [];
+  const { tray, bigEl, breakEl } = ctx;
+  tray.innerHTML = '';
+  const faces = dice.map((d) => {
+    const face = el('span', { class: 'dieface', text: String(d.val) });
+    tray.append(el('div', { class: `die` }, [face, el('span', { class: 'dielabel', text: 'd' + d.sides })]));
+    return face;
+  });
+  const dieEls = [...tray.querySelectorAll('.die')];
+  const setFinal = () => {
+    dieEls.forEach((d, i) => { d.classList.remove('rolling'); d.style.animationDelay = ''; faces[i].textContent = String(dice[i].val); d.classList.add('settle'); });
+    bigEl.classList.remove('rolling'); bigEl.textContent = String(ctx.res.total);
+    breakEl.classList.remove('pending');
+  };
+  const animate = state.rollAnim && dice.length && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!animate) { setFinal(); return; }
+  bigEl.classList.add('rolling'); bigEl.textContent = '…';
+  breakEl.classList.add('pending');
+  dieEls.forEach((d, i) => { d.classList.add('rolling'); d.style.animationDelay = (i * 60) + 'ms'; });
+  const iv = setInterval(() => {
+    faces.forEach((f, i) => { f.textContent = String(1 + Math.floor(Math.random() * dice[i].sides)); });
+  }, 55);
+  ctx.timers.push(iv);
+  ctx.timers.push(setTimeout(() => { clearInterval(iv); setFinal(); }, 720));
+}
 function formatBreak(res) {
   if (!res.parts || !res.parts.length) return res.display || '—';
   const segs = res.parts.map((p) => p.rolls ? `${p.label} <b>(${p.rolls.join('+')})</b>` : `${p.label} <b>(${p.value})</b>`);
   return `${segs.join('<span class="op"> + </span>')}<span class="op"> = </span><b>${res.total}</b>`;
 }
 
-// A3 — Detail (calc / description)
-function openDetail(v, label) {
+// A3 — Detail. Shows the value + its formula/description, and (when a roll is
+// available) a Roll button so rolling is a deliberate second tap, not instant.
+function openDetail(v, label, rollExpr) {
   state.overlay = {
     center: true,
     render() {
       const kids = [el('h2', { text: label })];
+      kids.push(el('div', { class: `detail-val ${displayValue(v) === 'ERR' ? 'err' : ''}`, text: displayValue(v) }));
       if (v.kind === 'calc') {
         const det = computed.details.get(v.id) || {};
         const result = computed.results.get(v.id);
@@ -1311,8 +1470,12 @@ function openDetail(v, label) {
         else kids.push(el('div', { class: 'formula', text: `= ${v.formula}  →  ${result}` }));
       }
       if (v.description) kids.push(el('p', { class: 'desc', style: 'margin-top:12px', text: v.description }));
-      if (v.kind !== 'calc' && !v.description) kids.push(el('p', { class: 'desc', text: 'No details.' }));
-      kids.push(el('div', { class: 'btnrow' }, [el('button', { class: 'btn primary', text: 'Close', onclick: closeOverlay })]));
+      if (rollExpr) kids.push(el('p', { class: 'desc', style: 'margin-top:12px', text: `Roll: ${rollExpr}` }));
+
+      const buttons = [];
+      if (rollExpr) buttons.push(el('button', { class: 'btn primary', text: '🎲 Roll', onclick: () => openRoll(v, rollExpr, label) }));
+      buttons.push(el('button', { class: `btn ${rollExpr ? 'ghost' : 'primary'}`, text: 'Close', onclick: closeOverlay }));
+      kids.push(el('div', { class: 'btnrow' }, buttons));
       return sheetCard(kids);
     },
   };
@@ -1327,11 +1490,44 @@ function openMenu() {
       el('div', { class: 'menu-list' }, [
         el('button', { onclick: () => { closeOverlay(); state.view = 'home'; render(); } }, [el('span', { class: 'mi', text: '⌂' }), 'Characters']),
         el('button', { onclick: () => { closeOverlay(); openShare(); } }, [el('span', { class: 'mi', text: '↥' }), 'Share & backup']),
+        el('button', { onclick: () => { closeOverlay(); openThemePicker(); } }, [el('span', { class: 'mi', text: '🎨' }), 'Appearance']),
         el('button', { onclick: () => { closeOverlay(); state.mode = state.mode === 'edit' ? 'play' : 'edit'; render(); } }, [el('span', { class: 'mi', text: '✎' }), state.mode === 'edit' ? 'Exit edit mode' : 'Edit this sheet']),
         el('button', { onclick: () => { closeOverlay(); openPrivacy(); } }, [el('span', { class: 'mi', text: '🔒' }), 'Privacy']),
         el('button', { class: 'danger', onclick: () => { const c = activeChar(); if (c) confirmDeleteCharacter(c); } }, [el('span', { class: 'mi', text: '🗑' }), 'Delete character']),
       ]),
       el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay })]),
+    ]),
+  };
+  render();
+}
+
+// --- Appearance / theme picker ---------------------------------------------
+function openThemePicker() {
+  state.overlay = {
+    render: () => sheetCard([
+      el('h2', { text: '🎨 Appearance' }),
+      el('p', { class: 'desc', text: 'Pick a colour scheme. It applies instantly and is remembered on this device.' }),
+      el('div', { class: 'theme-grid' }, THEMES.map((t) =>
+        el('button', {
+          class: `theme-opt ${state.theme === t.id ? 'on' : ''}`,
+          onclick: () => { state.theme = t.id; store.saveTheme(t.id); applyTheme(t.id); render(); },
+        }, [
+          el('span', { class: 'theme-preview' }, t.sw.map((c) => el('i', { style: `background:${c}` }))),
+          el('span', { class: 'theme-nm', text: t.name }),
+          state.theme === t.id ? el('span', { class: 'chk', text: '✓' }) : null,
+        ])
+      )),
+      el('div', { class: 'toggle-row' }, [
+        el('div', {}, [
+          el('div', { class: 'theme-nm', text: 'Dice roll animation' }),
+          el('div', { class: 'desc', style: 'margin:0', text: 'Dice wiggle and flicker before showing the result.' }),
+        ]),
+        el('button', {
+          class: `switch ${state.rollAnim ? 'on' : ''}`, role: 'switch', 'aria-checked': String(state.rollAnim),
+          onclick: () => { state.rollAnim = !state.rollAnim; store.saveRollAnim(state.rollAnim); render(); },
+        }, el('span', { class: 'knob' })),
+      ]),
+      el('div', { class: 'btnrow' }, [el('button', { class: 'btn primary', text: 'Done', onclick: closeOverlay })]),
     ]),
   };
   render();
@@ -1736,6 +1932,7 @@ function openPackImport(c, pack) {
 }
 
 // --- boot ------------------------------------------------------------------
+applyTheme(state.theme);
 if (new URLSearchParams(location.search).get('sheet') && state.save.activeCharacterId) state.view = 'sheet';
 render();
 // expose a little for console tinkering

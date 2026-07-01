@@ -27,7 +27,25 @@ const state = {
   pageIndex: 0,
   overlay: null,       // { type, ... }
   toast: null,
+  theme: store.loadTheme(),
+  rollAnim: store.loadRollAnim(),
 };
+
+// Selectable colour schemes. sw = [paper, ink, accent] for the picker preview.
+const THEMES = [
+  { id: 'parchment', name: '5e Sheet', sw: ['#ece3cf', '#221c12', '#7a2b2b'] },
+  { id: 'midnight',  name: 'Midnight',  sw: ['#221d19', '#ece6da', '#d0704a'] },
+  { id: 'forest',    name: 'Forest',    sw: ['#e7ece0', '#212a1d', '#436f3c'] },
+  { id: 'ocean',     name: 'Ocean',     sw: ['#e5ecf0', '#1c2530', '#256b7a'] },
+  { id: 'rose',      name: 'Rose',      sw: ['#f3e8eb', '#2c2125', '#a63b5e'] },
+];
+function applyTheme(id) {
+  const t = THEMES.find((x) => x.id === id) || THEMES[0];
+  if (t.id === 'parchment') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t.id;
+  const meta = document.querySelector('meta[name=theme-color]');
+  if (meta) meta.content = t.sw[2];   // accent drives the browser UI colour
+}
 
 function activeChar() {
   return state.save.characters.find((c) => c.id === state.save.activeCharacterId) || null;
@@ -77,8 +95,13 @@ function render() {
 // ======================================================================= HOME
 function renderHome() {
   const wrap = el('div', { class: 'home' });
-  wrap.append(el('h1', { text: 'Parchment' }));
-  wrap.append(el('p', { class: 'tagline', text: 'Your character sheets — on paper, offline.' }));
+  wrap.append(el('div', { class: 'home-hd' }, [
+    el('div', {}, [
+      el('h1', { text: 'Parchment' }),
+      el('p', { class: 'tagline', text: 'Your character sheets — on paper, offline.' }),
+    ]),
+    el('button', { class: 'iconbtn', title: 'Appearance', onclick: openThemePicker }, '🎨'),
+  ]));
   wrap.append(el('div', { class: 'warnbanner' }, [
     el('span', { text: '⚠' }),
     el('span', { text: 'Characters live only in this browser. Clearing site data erases them — export a JSON backup to keep them safe.' }),
@@ -220,15 +243,15 @@ function renderWidget(w, index, page) {
     if (s) node.append(el('div', { class: 'ws', text: `${s.label}: ${displayValue(s)}` }));
   }
 
-  // Tap markers
+  // Tap markers. Default tap opens the detail panel (which carries a Roll
+  // button when the value/widget has a roll); tap:'roll' is the opt-in insta-roll.
   if (state.mode === 'play' && w.tap && w.tap !== 'none') {
     const rollExpr = w.rollOverride || v.roll;
-    if (w.tap === 'roll' && rollExpr) node.append(el('div', { class: 'marker', text: w.rollOverride ? '⬡' : '⚔' }));
-    if (w.tap === 'detail') node.append(el('div', { class: 'marker', text: 'ⓘ' }));
+    node.append(el('div', { class: 'marker', text: rollExpr ? '🎲' : 'ⓘ' }));
     node.classList.add('tappable');
     node.addEventListener('click', () => {
       if (w.tap === 'roll' && rollExpr) openRoll(v, rollExpr, label);
-      else if (w.tap === 'detail') openDetail(v, label);
+      else openDetail(v, label, rollExpr);
     });
   }
 
@@ -263,9 +286,7 @@ function decorateEdit(node, w, index, page) {
   // replace any live input face with a static one in edit mode
   const handle = el('div', { class: 'drag', text: '⠿', title: 'Drag to reorder' });
   node.prepend(handle);
-  const size = w.cols >= 2 && w.rows >= 3 ? 'L' : w.cols >= 2 ? 'M' : 'S';
   node.append(el('div', { class: 'editrow' }, [
-    el('span', { class: 'szchip', text: size }),
     el('button', { class: 'cfg', text: 'Edit', onclick: (e) => { e.stopPropagation(); openWidgetConfig(w, page); } }),
   ]));
   enableDragReorder(node, handle, index, page);
@@ -355,16 +376,19 @@ function openRoll(v, expr, label) {
   state.overlay = {
     center: true,
     render() {
-      let res = result;
-      const bigEl = el('div', { class: 'rollbig', text: res.total });
-      const breakEl = el('div', { class: 'rollbreak', html: formatBreak(res) });
-      const rerender = () => { try { res = doRoll(); } catch { res = { total: 'ERR', display: '—', parts: [] }; } bigEl.textContent = res.total; breakEl.innerHTML = formatBreak(res); };
+      const tray = el('div', { class: 'dice-tray' });
+      const bigEl = el('div', { class: 'rollbig' });
+      const breakEl = el('div', { class: 'rollbreak' });
+      const ctx = { tray, bigEl, breakEl, res: result, timers: [] };
+      const play = (res) => { ctx.res = res; breakEl.innerHTML = formatBreak(res); animateRoll(diceFromParts(res.parts), ctx); };
+      const rollAgain = () => { let res; try { res = doRoll(); } catch { res = { total: 'ERR', display: '—', parts: [] }; } play(res); };
+      requestAnimationFrame(() => play(result)); // element is in the DOM by now
       return sheetCard([
         el('h2', { text: `${label} — Roll` }),
         el('p', { class: 'desc', text: expr }),
-        bigEl, breakEl,
+        tray, bigEl, breakEl,
         el('div', { class: 'btnrow' }, [
-          el('button', { class: 'btn primary', text: '↻ Roll again', onclick: rerender }),
+          el('button', { class: 'btn primary', text: '🎲 Roll again', onclick: rollAgain }),
           el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay }),
         ]),
       ]);
@@ -372,18 +396,63 @@ function openRoll(v, expr, label) {
   };
   render();
 }
+
+// Expand a roll breakdown into individual dice ({sides, val}) for the tray.
+function diceFromParts(parts) {
+  const out = [];
+  for (const p of (parts || [])) {
+    if (!p.rolls) continue;
+    const m = /d(\d+)/i.exec(p.label);
+    const sides = m ? +m[1] : 6;
+    p.rolls.forEach((val) => out.push({ sides, val }));
+  }
+  return out;
+}
+
+// Flat dice that wiggle while the face number flickers, then settle on the real
+// value (the value is the engine's; the flicker is cosmetic). Honours the
+// user's animation toggle and the OS reduced-motion setting.
+function animateRoll(dice, ctx) {
+  ctx.timers.forEach((t) => { clearInterval(t); clearTimeout(t); });
+  ctx.timers = [];
+  const { tray, bigEl, breakEl } = ctx;
+  tray.innerHTML = '';
+  const faces = dice.map((d) => {
+    const face = el('span', { class: 'dieface', text: String(d.val) });
+    tray.append(el('div', { class: `die` }, [face, el('span', { class: 'dielabel', text: 'd' + d.sides })]));
+    return face;
+  });
+  const dieEls = [...tray.querySelectorAll('.die')];
+  const setFinal = () => {
+    dieEls.forEach((d, i) => { d.classList.remove('rolling'); d.style.animationDelay = ''; faces[i].textContent = String(dice[i].val); d.classList.add('settle'); });
+    bigEl.classList.remove('rolling'); bigEl.textContent = String(ctx.res.total);
+    breakEl.classList.remove('pending');
+  };
+  const animate = state.rollAnim && dice.length && !window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!animate) { setFinal(); return; }
+  bigEl.classList.add('rolling'); bigEl.textContent = '…';
+  breakEl.classList.add('pending');
+  dieEls.forEach((d, i) => { d.classList.add('rolling'); d.style.animationDelay = (i * 60) + 'ms'; });
+  const iv = setInterval(() => {
+    faces.forEach((f, i) => { f.textContent = String(1 + Math.floor(Math.random() * dice[i].sides)); });
+  }, 55);
+  ctx.timers.push(iv);
+  ctx.timers.push(setTimeout(() => { clearInterval(iv); setFinal(); }, 720));
+}
 function formatBreak(res) {
   if (!res.parts || !res.parts.length) return res.display || '—';
   const segs = res.parts.map((p) => p.rolls ? `${p.label} <b>(${p.rolls.join('+')})</b>` : `${p.label} <b>(${p.value})</b>`);
   return `${segs.join('<span class="op"> + </span>')}<span class="op"> = </span><b>${res.total}</b>`;
 }
 
-// A3 — Detail (calc / description)
-function openDetail(v, label) {
+// A3 — Detail. Shows the value + its formula/description, and (when a roll is
+// available) a Roll button so rolling is a deliberate second tap, not instant.
+function openDetail(v, label, rollExpr) {
   state.overlay = {
     center: true,
     render() {
       const kids = [el('h2', { text: label })];
+      kids.push(el('div', { class: `detail-val ${displayValue(v) === 'ERR' ? 'err' : ''}`, text: displayValue(v) }));
       if (v.kind === 'calc') {
         const det = computed.details.get(v.id) || {};
         const result = computed.results.get(v.id);
@@ -391,8 +460,12 @@ function openDetail(v, label) {
         else kids.push(el('div', { class: 'formula', text: `= ${v.formula}  →  ${result}` }));
       }
       if (v.description) kids.push(el('p', { class: 'desc', style: 'margin-top:12px', text: v.description }));
-      if (v.kind !== 'calc' && !v.description) kids.push(el('p', { class: 'desc', text: 'No details.' }));
-      kids.push(el('div', { class: 'btnrow' }, [el('button', { class: 'btn primary', text: 'Close', onclick: closeOverlay })]));
+      if (rollExpr) kids.push(el('p', { class: 'desc', style: 'margin-top:12px', text: `Roll: ${rollExpr}` }));
+
+      const buttons = [];
+      if (rollExpr) buttons.push(el('button', { class: 'btn primary', text: '🎲 Roll', onclick: () => openRoll(v, rollExpr, label) }));
+      buttons.push(el('button', { class: `btn ${rollExpr ? 'ghost' : 'primary'}`, text: 'Close', onclick: closeOverlay }));
+      kids.push(el('div', { class: 'btnrow' }, buttons));
       return sheetCard(kids);
     },
   };
@@ -407,11 +480,44 @@ function openMenu() {
       el('div', { class: 'menu-list' }, [
         el('button', { onclick: () => { closeOverlay(); state.view = 'home'; render(); } }, [el('span', { class: 'mi', text: '⌂' }), 'Characters']),
         el('button', { onclick: () => { closeOverlay(); openShare(); } }, [el('span', { class: 'mi', text: '↥' }), 'Share & backup']),
+        el('button', { onclick: () => { closeOverlay(); openThemePicker(); } }, [el('span', { class: 'mi', text: '🎨' }), 'Appearance']),
         el('button', { onclick: () => { closeOverlay(); state.mode = state.mode === 'edit' ? 'play' : 'edit'; render(); } }, [el('span', { class: 'mi', text: '✎' }), state.mode === 'edit' ? 'Exit edit mode' : 'Edit this sheet']),
         el('button', { onclick: () => { closeOverlay(); openPrivacy(); } }, [el('span', { class: 'mi', text: '🔒' }), 'Privacy']),
         el('button', { class: 'danger', onclick: () => { const c = activeChar(); if (c) confirmDeleteCharacter(c); } }, [el('span', { class: 'mi', text: '🗑' }), 'Delete character']),
       ]),
       el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay })]),
+    ]),
+  };
+  render();
+}
+
+// --- Appearance / theme picker ---------------------------------------------
+function openThemePicker() {
+  state.overlay = {
+    render: () => sheetCard([
+      el('h2', { text: '🎨 Appearance' }),
+      el('p', { class: 'desc', text: 'Pick a colour scheme. It applies instantly and is remembered on this device.' }),
+      el('div', { class: 'theme-grid' }, THEMES.map((t) =>
+        el('button', {
+          class: `theme-opt ${state.theme === t.id ? 'on' : ''}`,
+          onclick: () => { state.theme = t.id; store.saveTheme(t.id); applyTheme(t.id); render(); },
+        }, [
+          el('span', { class: 'theme-preview' }, t.sw.map((c) => el('i', { style: `background:${c}` }))),
+          el('span', { class: 'theme-nm', text: t.name }),
+          state.theme === t.id ? el('span', { class: 'chk', text: '✓' }) : null,
+        ])
+      )),
+      el('div', { class: 'toggle-row' }, [
+        el('div', {}, [
+          el('div', { class: 'theme-nm', text: 'Dice roll animation' }),
+          el('div', { class: 'desc', style: 'margin:0', text: 'Dice wiggle and flicker before showing the result.' }),
+        ]),
+        el('button', {
+          class: `switch ${state.rollAnim ? 'on' : ''}`, role: 'switch', 'aria-checked': String(state.rollAnim),
+          onclick: () => { state.rollAnim = !state.rollAnim; store.saveRollAnim(state.rollAnim); render(); },
+        }, el('span', { class: 'knob' })),
+      ]),
+      el('div', { class: 'btnrow' }, [el('button', { class: 'btn primary', text: 'Done', onclick: closeOverlay })]),
     ]),
   };
   render();
@@ -816,6 +922,7 @@ function openPackImport(c, pack) {
 }
 
 // --- boot ------------------------------------------------------------------
+applyTheme(state.theme);
 if (new URLSearchParams(location.search).get('sheet') && state.save.activeCharacterId) state.view = 'sheet';
 render();
 // expose a little for console tinkering
