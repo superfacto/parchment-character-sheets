@@ -437,7 +437,10 @@ function openPrivacy() {
         'No analytics, no advertising, no cookies, no fingerprinting, and no third-party scripts. Nothing about who you are or how you use the app is measured, logged, or transmitted.'),
 
       privSection('No network calls',
-        'Once the page has loaded, the app makes no requests to any third party. It uses your device’s system fonts (no web-font CDN) and works fully offline. Installed as a home-screen app, even its own files are served from an on-device cache.'),
+        'Once the page has loaded, the app makes no requests to any third party. It uses your device’s system fonts (no web-font CDN) and sends nothing about you anywhere. After the first visit it can run fully offline, and installed as a home-screen app even its own files are served from an on-device cache.'),
+
+      privSection('Hosting & server logs',
+        'Parchment is served as plain static files from a web host (Netlify). As with every website, loading it means your browser connects to that host, which may keep standard access logs — typically your IP address, the time, and which files were requested. That is ordinary web-server metadata, not the contents of your sheets: your characters, values, and rolls never leave your device. As an extra guarantee, the host sends a strict Content-Security-Policy that blocks the page from contacting any third party at all — so the app cannot phone home even in principle. Opening the offline single-file version instead involves no host whatsoever.'),
 
       privSection('Sharing is entirely your choice',
         'The only way data leaves this device is if YOU export a JSON file — a character, a full backup, or a shareable pack — and send it somewhere yourself. Those files are plain, unencrypted JSON: once you share one, it goes wherever you send it, so treat backups like any other personal file. Importing only reads a file you pick; it never uploads anything.'),

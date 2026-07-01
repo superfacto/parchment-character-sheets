@@ -1,0 +1,25 @@
+# Netlify deploy config. Serves the app in app/ as the site root and enforces
+# the privacy promise at the edge: the Content-Security-Policy below blocks the
+# page from contacting ANY third party (connect-src/default-src 'self'), so the
+# "no external network calls" claim on the Privacy page is enforced, not just
+# intended. 'unsafe-inline' is required for the small inline service-worker
+# registration script and inline style attributes; it does not permit any
+# external origins.
+
+[build]
+  publish = "app"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; object-src 'none'"
+    Referrer-Policy = "no-referrer"
+    X-Content-Type-Options = "nosniff"
+    X-Frame-Options = "DENY"
+    Permissions-Policy = "geolocation=(), camera=(), microphone=(), usb=(), interest-cohort=()"
+
+# Never cache the service worker, so updates roll out immediately.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
