@@ -899,16 +899,34 @@ const BG_2014 = [
   { name: 'Sailor', skills: ['athletics', 'perception'] }, { name: 'Soldier', skills: ['athletics', 'intimidation'] },
   { name: 'Urchin', skills: ['sleight_of_hand', 'stealth'] },
 ];
-// 2024 backgrounds grant an ability boost (+2/+1 among three) + an origin feat +
-// two skills + a tool. Modelled simplified: a free +2/+1 boost and two free skill
-// picks (ability triples/feats vary per background — set them by hand after).
-const BG_2024 = ['Acolyte', 'Artisan', 'Charlatan', 'Criminal', 'Entertainer', 'Farmer', 'Guard', 'Guide', 'Hermit', 'Merchant', 'Noble', 'Sage', 'Sailor', 'Scribe', 'Soldier', 'Wayfarer'].map((name) => ({ name, skills: [], skillFlex: 2 }));
+// 2024 backgrounds (PHB 2024): each lists three abilities (assign +2/+1 or
+// +1/+1/+1 among them), an Origin feat, two fixed skills, and a tool. Verified
+// against roll20.net/dnd/2024-backgrounds and arcaneeye.com (they agree).
+const BG_2024 = [
+  { name: 'Acolyte', abilities: ['int', 'wis', 'cha'], feat: 'Magic Initiate (Cleric)', skills: ['insight', 'religion'], tool: "Calligrapher's Supplies" },
+  { name: 'Artisan', abilities: ['str', 'dex', 'int'], feat: 'Crafter', skills: ['investigation', 'persuasion'], tool: "Artisan's Tools" },
+  { name: 'Charlatan', abilities: ['dex', 'con', 'cha'], feat: 'Skilled', skills: ['deception', 'sleight_of_hand'], tool: 'Forgery Kit' },
+  { name: 'Criminal', abilities: ['dex', 'con', 'int'], feat: 'Alert', skills: ['sleight_of_hand', 'stealth'], tool: "Thieves' Tools" },
+  { name: 'Entertainer', abilities: ['str', 'dex', 'cha'], feat: 'Musician', skills: ['acrobatics', 'performance'], tool: 'Musical Instrument' },
+  { name: 'Farmer', abilities: ['str', 'con', 'wis'], feat: 'Tough', skills: ['animal_handling', 'nature'], tool: "Carpenter's Tools" },
+  { name: 'Guard', abilities: ['str', 'int', 'wis'], feat: 'Alert', skills: ['athletics', 'perception'], tool: 'Gaming Set' },
+  { name: 'Guide', abilities: ['dex', 'con', 'wis'], feat: 'Magic Initiate (Druid)', skills: ['stealth', 'survival'], tool: "Cartographer's Tools" },
+  { name: 'Hermit', abilities: ['con', 'wis', 'cha'], feat: 'Healer', skills: ['medicine', 'religion'], tool: 'Herbalism Kit' },
+  { name: 'Merchant', abilities: ['con', 'int', 'cha'], feat: 'Lucky', skills: ['animal_handling', 'persuasion'], tool: "Navigator's Tools" },
+  { name: 'Noble', abilities: ['str', 'int', 'cha'], feat: 'Skilled', skills: ['history', 'persuasion'], tool: 'Gaming Set' },
+  { name: 'Sage', abilities: ['con', 'int', 'wis'], feat: 'Magic Initiate (Wizard)', skills: ['arcana', 'history'], tool: "Calligrapher's Supplies" },
+  { name: 'Sailor', abilities: ['str', 'dex', 'wis'], feat: 'Tavern Brawler', skills: ['acrobatics', 'perception'], tool: "Navigator's Tools" },
+  { name: 'Scribe', abilities: ['dex', 'int', 'wis'], feat: 'Skilled', skills: ['investigation', 'perception'], tool: "Calligrapher's Supplies" },
+  { name: 'Soldier', abilities: ['str', 'dex', 'con'], feat: 'Savage Attacker', skills: ['athletics', 'intimidation'], tool: 'Gaming Set' },
+  { name: 'Wayfarer', abilities: ['dex', 'wis', 'cha'], feat: 'Lucky', skills: ['insight', 'stealth'], tool: "Thieves' Tools" },
+];
 
 const STD_ARRAY = [15, 14, 13, 12, 10, 8];
 // [shortKey (mod id prefix / scores key), label, full ability value id]
 const ABILITY_KEYS = [['str', 'STR', 'strength'], ['dex', 'DEX', 'dexterity'], ['con', 'CON', 'constitution'], ['int', 'INT', 'intelligence'], ['wis', 'WIS', 'wisdom'], ['cha', 'CHA', 'charisma']];
 const ALL_SKILLS = [['acrobatics', 'Acrobatics'], ['animal_handling', 'Animal Handling'], ['arcana', 'Arcana'], ['athletics', 'Athletics'], ['deception', 'Deception'], ['history', 'History'], ['insight', 'Insight'], ['intimidation', 'Intimidation'], ['investigation', 'Investigation'], ['medicine', 'Medicine'], ['nature', 'Nature'], ['perception', 'Perception'], ['performance', 'Performance'], ['persuasion', 'Persuasion'], ['religion', 'Religion'], ['sleight_of_hand', 'Sleight of Hand'], ['stealth', 'Stealth'], ['survival', 'Survival']];
 const SKILL_LABEL = Object.fromEntries(ALL_SKILLS);
+const ABIL_LABEL = Object.fromEntries(ABILITY_KEYS.map(([k, l]) => [k, l]));
 function abilityMod(score) { return Math.floor((score - 10) / 2); }
 function hpFor(hd, conMod, level) {
   const avg = Math.floor(hd / 2) + 1;                    // fixed average per level
@@ -919,11 +937,14 @@ function assignStdArray(scores, cls) {
   STD_ARRAY.forEach((val, i) => { if (order[i]) scores[order[i]] = val; });
 }
 // Where the flexible ability boosts come from: racial choice (2014) or the
-// background boost (2024). pool = points to place, cap = max into one ability.
+// background boost (2024). pool = points to place, cap = max into one ability,
+// abilities = which ability keys are eligible.
 function flexSpec(data) {
-  if (data.ed === '2024') return { pool: data.bg ? 3 : 0, cap: 2, label: 'Background ability boost — assign +2 and +1 (or +1/+1/+1)' };
+  if (data.ed === '2024') return { pool: data.bg ? 3 : 0, cap: 2, abilities: (data.bg && data.bg.abilities) || [], label: 'Background ability boost — assign +2 and +1 (or +1/+1/+1)' };
   const f = data.race && data.race.asiFlex || 0;
-  return { pool: f, cap: 1, label: 'Racial ability choice — place your +1s' };
+  const fixed = fixedAsi(data);
+  const abilities = ABILITY_KEYS.map(([k]) => k).filter((k) => !fixed[k]); // “other” abilities
+  return { pool: f, cap: 1, abilities, label: 'Racial ability choice — place your +1s' };
 }
 function fixedAsi(data) { return (data.ed === '2014' && data.race && data.race.asi) || {}; }
 function finalScore(data, k) { return (data.base[k] || 10) + (fixedAsi(data)[k] || 0) + (data.flex[k] || 0); }
@@ -1005,12 +1026,17 @@ function openBuilder() {
         })));
       } else if (step === 2) {                            // Background
         kids.push(el('h2', { text: 'Background' }));
-        kids.push(el('div', { class: 'pick-list' }, bgList(data).map((b) =>
-          el('button', { class: `pick ${data.bg && data.bg.name === b.name ? 'on' : ''}`, onclick: () => { data.bg = b; data.freeSkills = []; data.flex = {}; render(); } }, [
-            el('div', { class: 'pick-t', text: b.name }),
-            el('div', { class: 'pick-d', text: data.ed === '2014' ? `Skills: ${b.skills.map((s) => SKILL_LABEL[s]).join(', ')}` : 'Grants an ability boost (+2/+1) and two skills' }),
-          ]))));
-        if (data.ed === '2024') kids.push(el('div', { class: 'hint', text: 'Simplified: 2024 backgrounds vary — set the exact ability options, feat and tools by hand after creation.' }));
+        kids.push(el('div', { class: 'pick-list' }, bgList(data).map((b) => {
+          const kids2 = [el('div', { class: 'pick-t', text: b.name })];
+          if (data.ed === '2014') {
+            kids2.push(el('div', { class: 'pick-d', text: `Skills: ${b.skills.map((s) => SKILL_LABEL[s]).join(', ')}` }));
+          } else {
+            kids2.push(el('div', { class: 'pick-d', text: `${b.abilities.map((a) => a.toUpperCase()).join(' / ')} · ${b.feat}` }));
+            kids2.push(el('div', { class: 'pick-d', text: `${b.skills.map((s) => SKILL_LABEL[s]).join(', ')} · ${b.tool}` }));
+          }
+          return el('button', { class: `pick ${data.bg && data.bg.name === b.name ? 'on' : ''}`, onclick: () => { data.bg = b; data.freeSkills = []; data.flex = {}; render(); } }, kids2);
+        })));
+        if (data.ed === '2024') kids.push(el('div', { class: 'hint', text: 'Ability boost uses the three listed abilities. The Origin feat is saved into Features & Traits and the tool is noted (Parchment has no separate feat/tool system yet).' }));
       } else if (step === 3) {                            // Abilities
         const spec = flexSpec(data);
         const used = Object.values(data.flex).reduce((a, b) => a + b, 0);
@@ -1036,8 +1062,8 @@ function openBuilder() {
         if (spec.pool > 0) {
           kids.push(el('div', { class: 'flex-box' }, [
             el('div', { class: 'pick-h' }, [el('span', { text: spec.label }), el('span', { class: 'pick-left', text: `${remaining} left` })]),
-            el('div', { class: 'flex-grid' }, ABILITY_KEYS.map(([k, lbl]) => el('div', { class: 'flexrow' }, [
-              el('span', { class: 'ab-l', text: lbl }),
+            el('div', { class: 'flex-grid' }, spec.abilities.map((k) => el('div', { class: 'flexrow' }, [
+              el('span', { class: 'ab-l', text: ABIL_LABEL[k] }),
               el('button', { class: 'step', text: '−', disabled: !(data.flex[k] > 0), onclick: () => { data.flex[k] = (data.flex[k] || 0) - 1; if (!data.flex[k]) delete data.flex[k]; render(); } }),
               el('span', { class: 'ab-v', text: `+${data.flex[k] || 0}` }),
               el('button', { class: 'step', text: '+', disabled: remaining <= 0 || (data.flex[k] || 0) >= spec.cap, onclick: () => { data.flex[k] = (data.flex[k] || 0) + 1; render(); } }),
@@ -1067,6 +1093,7 @@ function openBuilder() {
           revRow(data.ed === '2024' ? 'Species' : 'Race', data.race ? data.race.name : '—'),
           revRow('Background', data.bg ? data.bg.name : '—'),
           revRow('Class & level', `${data.cls.name} ${data.level}`),
+          data.ed === '2024' && data.bg ? revRow('Origin feat', data.bg.feat) : null,
           revRow('Scores', ABILITY_KEYS.map(([k, l]) => `${l} ${total(k)}`).join('  ·  ')),
           revRow('Max HP', String(hp)),
           revRow('Saves', data.cls.saves.map((a) => a.toUpperCase()).join(', ')),
@@ -1093,6 +1120,12 @@ function createFromBuilder(data) {
   if (data.race) set('race', { text: data.race.name });
   if (data.bg) set('background', { text: data.bg.name });
   if (data.race && data.race.speed) set('speed', { value: data.race.speed });
+  // 2024 backgrounds grant an Origin feat + a tool — recorded as text (no
+  // dedicated feat/tool system yet).
+  if (data.ed === '2024' && data.bg && data.bg.feat) {
+    set('features', { text: `Origin feat: ${data.bg.feat}` });
+    if (data.bg.tool) set('equipment', { text: `Tool proficiency: ${data.bg.tool}` });
+  }
   ABILITY_KEYS.forEach(([k, , full]) => set(full, { value: finalScore(data, k) }));
   const hp = hpFor(data.cls.hd, abilityMod(finalScore(data, 'con')), data.level);
   set('hp_max', { value: hp });
