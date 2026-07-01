@@ -1,5 +1,5 @@
 // Headless kernel tests (SPEC build-sequence step 1). Run: node app/engine.test.mjs
-import { computeAll, evalRoll, compileCalc, FormulaError, refsOf } from './engine.js';
+import { computeAll, evalRoll, compileCalc, FormulaError, refsOf, previewRoll } from './engine.js';
 
 let pass = 0, fail = 0;
 function eq(name, got, want) {
@@ -75,6 +75,15 @@ eq('2d6 total', r2.total, 10);
 // keep-highest advantage: 2d20kh1, rolls 5 and 18 -> 18
 const adv = evalRoll('2d20kh1 + dex_mod', resolve, seq([0.2, 0.88])); // ~5, ~18
 ok('advantage kh', adv.total === 18 + 2);
+
+// previewRoll — face summary (dice notation + flat modifier)
+const pr = (name) => ({ str_mod: 3, dex_mod: 2, proficiency_bonus: 2 }[name] ?? 0);
+eq('preview attack', previewRoll('1d20 + str_mod + proficiency_bonus', pr), '1d20 + 5');
+eq('preview damage', previewRoll('1d8 + str_mod', pr), '1d8 + 3');
+eq('preview flat zero', previewRoll('1d6 + dex_mod', (n) => (n === 'dex_mod' ? 0 : 0)), '1d6');
+eq('preview negative', previewRoll('1d4 + str_mod', () => -1), '1d4 − 1');
+eq('preview multi-dice', previewRoll('2d6 + 1d4 + 2', pr), '2d6 + 1d4 + 2');
+eq('preview no dice', previewRoll('str_mod + 1', pr), '4');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

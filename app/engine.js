@@ -274,6 +274,21 @@ function renderRoll(parts, total) {
   return `${segs.join(' + ')} = ${total}`;
 }
 
+// A static, auto-updating summary of a roll for a widget face, e.g. "1d20 + 5"
+// or "1d8 + 3". The dice notation is kept literal; the non-dice terms are
+// evaluated (dice treated as 0) into a single flat modifier via `resolve`.
+export function previewRoll(expr, resolve) {
+  let tokens;
+  try { tokens = tokenize(expr, { allowDice: true }); } catch { return '?'; }
+  const dice = tokens.filter((t) => t.type === 'dice').map((t) => t.text);
+  let flat = NaN;
+  try { flat = evalRPN(toRPN(tokens), { resolve, rollDice: () => ({ value: 0, rolls: [] }) }); } catch { flat = NaN; }
+  if (!dice.length) return Number.isFinite(flat) ? String(flat) : '?';
+  const dicePart = dice.join(' + ');
+  if (!Number.isFinite(flat) || flat === 0) return dicePart;
+  return `${dicePart} ${flat > 0 ? '+' : '−'} ${Math.abs(flat)}`;
+}
+
 // --- Character graph: compute all calc values (topo sort + cycle detect) ---
 // values: array of Value objects. Returns Map(id -> number|string|'ERR')
 // plus a details map for tap-detail (formula / error message).

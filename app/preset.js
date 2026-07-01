@@ -56,8 +56,10 @@ export function dnd5eCharacter(name = 'New Hero') {
   }
 
   // Example weapons demonstrating the roll model.
-  values.push({ id: 'longsword', label: 'Longsword', kind: 'text', text: 'Longsword', roll: '1d8 + str_mod', description: 'Versatile (1d10). Melee, 5 ft.', group: 'Attacks' });
-  values.push({ id: 'shortbow', label: 'Shortbow', kind: 'text', text: 'Shortbow', roll: '1d6 + dex_mod', description: 'Ranged, 80/320 ft.', group: 'Attacks' });
+  values.push({ id: 'longsword', label: 'Longsword', kind: 'text', text: 'Longsword', description: 'Versatile (1d10). Melee, 5 ft.', group: 'Attacks',
+    rolls: [{ name: 'Attack', expr: '1d20 + str_mod + proficiency_bonus' }, { name: 'Damage', expr: '1d8 + str_mod' }] });
+  values.push({ id: 'shortbow', label: 'Shortbow', kind: 'text', text: 'Shortbow', description: 'Ranged, 80/320 ft.', group: 'Attacks',
+    rolls: [{ name: 'Attack', expr: '1d20 + dex_mod + proficiency_bonus' }, { name: 'Damage', expr: '1d6 + dex_mod' }] });
 
   const w = (o) => ({ kind: 'bound', cols: 1, rows: 1, tap: 'none', ...o, id: newId('w') });
 
