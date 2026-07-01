@@ -27,6 +27,7 @@ const state = {
   pageIndex: 0,
   overlay: null,       // { type, ... }
   toast: null,
+  resizing: null,      // widget id currently in drag-to-resize mode
   theme: store.loadTheme(),
   rollAnim: store.loadRollAnim(),
   rollLog: [],
@@ -123,6 +124,7 @@ function addWeapon(page) {
 // --- render dispatch -------------------------------------------------------
 function render() {
   recompute();
+  if (state.mode !== 'edit') state.resizing = null;
   const app = $('#app');
   app.innerHTML = '';
   // Overlays/toasts live on <body>, not inside #app — clear the stale ones so
@@ -236,25 +238,29 @@ function renderSheet() {
   // One-time hint so the tap-to-detail/roll markers are discoverable.
   if (state.mode === 'play' && !store.getFlag('rollhint')) {
     store.setFlag('rollhint');
-    setTimeout(() => toast('Tap a card for details & to roll 🎲 · swipe for more pages'), 500);
+    setTimeout(() => toast('Tap any card for details & to roll 🎲 · swipe for pages · Edit to rearrange'), 500);
   }
   return [appbar, pagebar, sheet];
 }
 
 function renderWidget(w, index, page) {
+  const editing = state.mode === 'edit';
+  const play = state.mode === 'play';
+
   if (w.kind === 'label') {
-    const node = el('div', { class: 'wdg label c2' }, [el('div', { class: 'lbl', text: w.title || 'Section' })]);
-    if (state.mode === 'edit') decorateEdit(node, w, index, page);
+    const node = el('div', { class: 'wdg label' }, [el('div', { class: 'lbl', text: w.title || 'Section' })]);
+    setSpan(node, w);
+    if (editing) decorateEdit(node, w, index, page);
     return node;
   }
 
   const v = valueById(w.ref);
-  const spanClass = `${(w.cols || 1) >= 2 ? 'c2' : ''} ${w.rows === 2 ? 'r2' : w.rows >= 3 ? 'r3' : ''}`;
-  const node = el('div', { class: `wdg ${spanClass}` });
+  const node = el('div', { class: 'wdg' });
+  setSpan(node, w);
 
   if (!v) {
     node.append(el('div', { class: 'wl', text: w.ref || '—' }), el('div', { class: 'wv err', text: 'ERR' }));
-    if (state.mode === 'edit') decorateEdit(node, w, index, page);
+    if (editing) decorateEdit(node, w, index, page);
     return node;
   }
 
@@ -262,29 +268,29 @@ function renderWidget(w, index, page) {
   node.append(el('div', { class: 'wl', text: label }));
 
   const rolls = rollsFor(v, w);
-  // Display face derived from bound value kind (§9).
-  const numberHasTap = v.kind === 'number' && w.tap && w.tap !== 'none';
-  const weaponFace = v.kind === 'text' && rolls.length && state.mode === 'play';
-  const statFace = w.face === 'stat' && state.mode === 'play';
-  if (statFace) {
-    // Classic 5e ability box: big signed modifier (hero) + editable score pill.
-    const mod = valueById(w.secondaryRef);
+  // In play mode a widget is either directly editable (opt-in per widget) or a
+  // clean read-only face you tap to open Details. Editing lives behind the
+  // "editable in play" tick; everything else opens Details (rolls live there).
+  const editableFace = play && w.editableInPlay;
+  const weaponFace = v.kind === 'text' && rolls.length && play && !editableFace;
+  let tappable = play;   // read-only faces open Details on tap
+
+  if (w.face === 'stat' && play) {
+    // Classic 5e ability box: big modifier (hero) over the score.
     node.classList.add('statface');
+    const mod = valueById(w.secondaryRef);
     node.append(el('div', { class: `statmod ${mod && displayValue(mod) === 'ERR' ? 'err' : ''}`, text: mod ? displayValue(mod) : '—' }));
-    const pill = el('button', { class: 'statscore', title: 'Edit score' }, String(v.value ?? 0));
-    pill.addEventListener('click', (e) => { e.stopPropagation(); editInline(pill, v, 'number'); });
-    node.append(pill);
-  } else if (weaponFace) {
-    // A weapon/item shows a computed roll summary — "1d20 + 5" / "1d8 + 3".
-    const rows = el('div', { class: 'rollrows' });
-    rolls.forEach((r) => rows.append(el('div', { class: 'rollrow' }, [
-      el('span', { class: 'rn', text: r.name || 'Roll' }),
-      el('span', { class: 'rp', text: previewRoll(r.expr, rollResolve) }),
-    ])));
-    node.append(rows);
-  } else if (v.kind === 'number' && state.mode === 'play' && !numberHasTap) {
-    // Directly editable number with a −/+ stepper for quick HP-style adjustments.
-    node.classList.add('num');
+    if (editableFace) {
+      const pill = el('button', { class: 'statscore', title: 'Edit score' }, String(v.value ?? 0));
+      pill.addEventListener('click', (e) => { e.stopPropagation(); editInline(pill, v, 'number'); });
+      node.append(pill);
+    } else {
+      node.append(el('div', { class: 'statscore static', text: String(v.value ?? 0) }));
+    }
+    // The whole card still opens Details (to roll the check).
+  } else if (editableFace && v.kind === 'number') {
+    // Directly editable number with a −/+ stepper (HP-style quick adjust).
+    node.classList.add('num'); tappable = false;
     const input = el('input', {
       type: 'number', value: v.value ?? 0, inputmode: 'numeric',
       onchange: (e) => { v.value = e.target.value === '' ? 0 : Number(e.target.value); commit(); },
@@ -295,46 +301,52 @@ function renderWidget(w, index, page) {
       el('button', { class: 'step', text: '−', onclick: step(-1) }), input,
       el('button', { class: 'step', text: '+', onclick: step(1) }),
     ]));
-  } else if (numberHasTap && state.mode === 'play') {
-    // Tap is reserved for the roll/detail action; editing is via the ✎ affordance.
-    node.append(el('div', { class: 'wv', text: String(v.value ?? 0) }));
-    const pencil = el('button', { class: 'editnum', text: '✎', title: 'Edit value' });
-    pencil.addEventListener('click', (e) => { e.stopPropagation(); editInline(node.querySelector('.wv'), v, 'number'); });
-    node.append(pencil);
-  } else if (v.kind === 'text' && (w.rows || 1) >= 2 && state.mode === 'play' && w.tap === 'none') {
-    const ta = el('textarea', { rows: (w.rows || 2) * 2, oninput: (e) => { v.text = e.target.value; store.save(state.save); } }, []);
-    ta.value = v.text || '';
-    ta.addEventListener('click', (e) => e.stopPropagation());
-    node.append(ta);
-  } else if (v.kind === 'text' && state.mode === 'play' && w.tap === 'none') {
-    // Single-line text (class, notes) — editable inline via the ✎ affordance.
-    node.append(el('div', { class: 'wv text', text: v.text || '—' }));
-    const pencil = el('button', { class: 'editnum', text: '✎', title: 'Edit text' });
-    pencil.addEventListener('click', (e) => { e.stopPropagation(); editInline(node.querySelector('.wv'), v, 'text'); });
-    node.append(pencil);
+  } else if (editableFace && v.kind === 'text') {
+    tappable = false;
+    if ((w.rows || 2) >= 4) {
+      const ta = el('textarea', { rows: Math.max(2, Math.round((w.rows || 4) / 2) * 2), oninput: (e) => { v.text = e.target.value; store.save(state.save); } }, []);
+      ta.value = v.text || '';
+      ta.addEventListener('click', (e) => e.stopPropagation());
+      node.append(ta);
+    } else {
+      const inp = el('input', { class: 'inlinetext-live', value: v.text || '', oninput: (e) => { v.text = e.target.value; store.save(state.save); } });
+      inp.addEventListener('click', (e) => e.stopPropagation());
+      node.append(inp);
+    }
+  } else if (weaponFace) {
+    // A weapon/item shows a computed roll summary — "1d20 + 5" / "1d8 + 3".
+    const rows = el('div', { class: 'rollrows' });
+    rolls.forEach((r) => rows.append(el('div', { class: 'rollrow' }, [
+      el('span', { class: 'rn', text: r.name || 'Roll' }),
+      el('span', { class: 'rp', text: previewRoll(r.expr, rollResolve) }),
+    ])));
+    node.append(rows);
   } else {
     const disp = displayValue(v);
     node.append(el('div', { class: `wv ${v.kind === 'text' ? 'text' : ''} ${disp === 'ERR' ? 'err' : ''}`, text: disp }));
   }
 
-  if (w.secondaryRef && !weaponFace && !statFace) {
+  if (w.secondaryRef && w.face !== 'stat' && !weaponFace) {
     const s = valueById(w.secondaryRef);
     if (s) node.append(el('div', { class: 'ws', text: `${s.label}: ${displayValue(s)}` }));
   }
 
-  // Tap markers. Default tap opens the detail panel (which carries a Roll
-  // button per roll); tap:'roll' with a single roll is the opt-in insta-roll.
-  if (state.mode === 'play' && w.tap && w.tap !== 'none') {
+  if (tappable) {
     node.append(el('div', { class: 'marker', text: rolls.length ? '🎲' : 'ⓘ' }));
     node.classList.add('tappable');
-    node.addEventListener('click', () => {
-      if (w.tap === 'roll' && rolls.length === 1) openRoll(v, rolls[0].expr, label);
-      else openDetail(v, label, rolls);
-    });
+    node.addEventListener('click', () => openDetail(v, label, rolls));
   }
 
-  if (state.mode === 'edit') decorateEdit(node, w, index, page);
+  if (editing) decorateEdit(node, w, index, page);
   return node;
+}
+
+// Place a widget on the 4-column fine grid. Columns 1–4 (1 = half of old
+// "small"); rows are a growable floor so tall faces never clip. Labels keep
+// their natural height.
+function setSpan(node, w) {
+  node.style.gridColumn = `span ${Math.max(1, Math.min(4, w.cols || 2))}`;
+  if (w.kind !== 'label') node.style.gridRow = `span ${Math.max(1, w.rows || 2)}`;
 }
 
 // Format a number the 5e way when the value is flagged `signed`: +3 / +0 / −1.
@@ -367,16 +379,55 @@ function editInline(targetEl, v, kind = 'number') {
 }
 
 // --- edit-mode widget chrome ----------------------------------------------
+// Move handle sits centered over the card; a gear (top-right) opens config and a
+// resize icon (bottom-right) toggles drag-to-resize. Size lives on the card, not
+// in a menu.
 function decorateEdit(node, w, index, page) {
   node.classList.add('editing');
   node.classList.remove('num');
-  // replace any live input face with a static one in edit mode
-  const handle = el('div', { class: 'drag', text: '⠿', title: 'Drag to reorder' });
-  node.prepend(handle);
-  node.append(el('div', { class: 'editrow' }, [
-    el('button', { class: 'cfg', text: 'Edit', onclick: (e) => { e.stopPropagation(); openWidgetConfig(w, page); } }),
-  ]));
+  const resizing = state.resizing === w.id;
+  if (resizing) node.classList.add('resizing');
+
+  const handle = el('div', { class: 'drag center', text: '✥', title: 'Drag to move' });
+  node.append(handle);
   enableDragReorder(node, handle, index, page);
+
+  node.append(el('button', { class: 'wbtn cfg', text: '⚙', title: 'Configure', onclick: (e) => { e.stopPropagation(); openWidgetConfig(w, page); } }));
+
+  const rz = el('button', { class: `wbtn rz ${resizing ? 'on' : ''}`, text: '⤡', title: 'Resize', onclick: (e) => { e.stopPropagation(); state.resizing = resizing ? null : w.id; render(); } });
+  node.append(rz);
+  if (resizing) {
+    const grip = el('div', { class: 'resizegrip', title: 'Drag to resize' });
+    node.append(grip);
+    enableResize(node, grip, w);
+  }
+}
+
+// Drag the bottom-right grip to resize; spans snap to whole grid cells (4 cols
+// wide, a growable row unit tall). Live-preview via inline style, commit on drop.
+function enableResize(node, grip, w) {
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const grid = node.closest('.grid');
+    const gap = 10;
+    const colUnit = (grid.getBoundingClientRect().width - gap * 3) / 4 + gap; // colW + gap
+    const rowUnit = 40 + gap;                                                 // auto-row floor + gap
+    const rect = node.getBoundingClientRect();
+    let cols = w.cols || 2, rows = w.rows || 2;
+    const move = (ev) => {
+      cols = Math.max(1, Math.min(4, Math.round((ev.clientX - rect.left + gap) / colUnit)));
+      rows = Math.max(1, Math.min(16, Math.round((ev.clientY - rect.top + gap) / rowUnit)));
+      node.style.gridColumn = `span ${cols}`;
+      node.style.gridRow = `span ${rows}`;
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      w.cols = cols; w.rows = rows; commit();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
 }
 
 // --- pointer-based drag reorder (works on touch + mouse) -------------------
@@ -743,40 +794,126 @@ function deleteCharacter(id) {
 
 // ============================================================ NEW CHARACTER (C2)
 function openNewCharacter() {
-  let name = '';
-  let start = 'dnd5e';
+  state.overlay = {
+    render: () => sheetCard([
+      el('h2', { text: 'New character' }),
+      el('p', { class: 'desc', text: 'Guided 5e build, a ready-made 5e sheet, or an empty canvas.' }),
+      el('div', { class: 'menu-list startlist' }, [
+        el('button', { onclick: () => { closeOverlay(); openBuilder(); } }, [el('span', { class: 'mi', text: '✦' }), el('div', {}, [el('div', { class: 'opt-t', text: 'D&D 5e — guided builder' }), el('div', { class: 'opt-d', text: 'Pick class, level & ability scores. Fills the sheet for you.' })])]),
+        el('button', { onclick: () => quickCreate('dnd5e') }, [el('span', { class: 'mi', text: '●' }), el('div', {}, [el('div', { class: 'opt-t', text: 'D&D 5e — preset sheet' }), el('div', { class: 'opt-d', text: 'The full 5e layout with default scores. Edit anything after.' })])]),
+        el('button', { onclick: () => quickCreate('blank') }, [el('span', { class: 'mi', text: '○' }), el('div', {}, [el('div', { class: 'opt-t', text: 'Blank' }), el('div', { class: 'opt-d', text: 'An empty sheet with a single notes widget.' })])]),
+      ]),
+      el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay })]),
+    ]),
+  };
+  render();
+}
+
+function quickCreate(kind) {
+  const c = kind === 'dnd5e' ? dnd5eCharacter('New Hero') : blankCharacter('New Character');
+  state.save.characters.push(c);
+  state.save.activeCharacterId = c.id;
+  state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
+  commit();
+}
+
+// --- Guided 5e character builder -------------------------------------------
+const BUILD_CLASSES = [
+  { name: 'Barbarian', hd: 12, prime: ['str'] }, { name: 'Bard', hd: 8, prime: ['cha'] },
+  { name: 'Cleric', hd: 8, prime: ['wis'] }, { name: 'Druid', hd: 8, prime: ['wis'] },
+  { name: 'Fighter', hd: 10, prime: ['str', 'dex'] }, { name: 'Monk', hd: 8, prime: ['dex', 'wis'] },
+  { name: 'Paladin', hd: 10, prime: ['str', 'cha'] }, { name: 'Ranger', hd: 10, prime: ['dex', 'wis'] },
+  { name: 'Rogue', hd: 8, prime: ['dex'] }, { name: 'Sorcerer', hd: 6, prime: ['cha'] },
+  { name: 'Warlock', hd: 8, prime: ['cha'] }, { name: 'Wizard', hd: 6, prime: ['int'] },
+];
+const STD_ARRAY = [15, 14, 13, 12, 10, 8];
+// [shortKey (mod id prefix / scores key), label, full ability value id]
+const ABILITY_KEYS = [['str', 'STR', 'strength'], ['dex', 'DEX', 'dexterity'], ['con', 'CON', 'constitution'], ['int', 'INT', 'intelligence'], ['wis', 'WIS', 'wisdom'], ['cha', 'CHA', 'charisma']];
+function abilityMod(score) { return Math.floor((score - 10) / 2); }
+function hpFor(hd, conMod, level) {
+  const avg = Math.floor(hd / 2) + 1;                    // fixed average per level
+  return (hd + conMod) + (level - 1) * (avg + conMod);
+}
+function assignStdArray(scores, cls) {
+  const order = [...new Set([...cls.prime, 'con', 'dex', 'wis', 'str', 'int', 'cha'])];
+  STD_ARRAY.forEach((val, i) => { if (order[i]) scores[order[i]] = val; });
+}
+
+function openBuilder() {
+  const data = { name: '', cls: BUILD_CLASSES.find((c) => c.name === 'Fighter'), level: 1, scores: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 } };
+  const steps = ['Basics', 'Abilities', 'Review'];
+  let step = 0;
   state.overlay = {
     render() {
-      const create = () => {
-        const nm = name.trim() || (start === 'dnd5e' ? 'New Hero' : 'New Character');
-        const c = start === 'dnd5e' ? dnd5eCharacter(nm) : blankCharacter(nm);
-        state.save.characters.push(c);
-        state.save.activeCharacterId = c.id;
-        state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
-        commit();
-      };
-      const nameInput = el('input', { placeholder: 'e.g. Thordak', value: name, oninput: (e) => { name = e.target.value; } });
-      nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); create(); } });
-      const pick = (val) => { start = val; render(); };
-      return sheetCard([
-        el('h2', { text: 'New character' }),
-        el('div', { class: 'field' }, [el('label', { text: 'Name' }), nameInput]),
-        el('div', { class: 'field' }, [
-          el('label', { text: 'Start from' }),
-          el('div', { class: 'seg' }, [
-            el('button', { class: start === 'dnd5e' ? 'on' : '', text: '● D&D 5e preset', onclick: () => pick('dnd5e') }),
-            el('button', { class: start === 'blank' ? 'on' : '', text: '○ Blank', onclick: () => pick('blank') }),
-          ]),
-          el('div', { class: 'hint', text: start === 'dnd5e' ? 'Full 5e sheet — abilities, saves, skills, attacks. Editable after.' : 'An empty sheet with a single notes widget.' }),
-        ]),
-        el('div', { class: 'btnrow' }, [
-          el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay }),
-          el('button', { class: 'btn primary', text: 'Create', onclick: create }),
-        ]),
-      ]);
+      const kids = [el('div', { class: 'wiz-steps' }, steps.map((s, i) => el('span', { class: `wiz-step ${i === step ? 'on' : ''} ${i < step ? 'done' : ''}`, text: `${i + 1}. ${s}` })))];
+
+      if (step === 0) {
+        const nameInput = el('input', { placeholder: 'e.g. Thordak', value: data.name, oninput: (e) => { data.name = e.target.value; } });
+        kids.push(el('h2', { text: 'Basics' }));
+        kids.push(field('Name', nameInput));
+        kids.push(el('div', { class: 'field' }, [
+          el('label', { text: 'Class' }),
+          el('div', { class: 'class-grid' }, BUILD_CLASSES.map((cl) => el('button', { class: data.cls.name === cl.name ? 'on' : '', text: cl.name, onclick: () => { data.cls = cl; render(); } }))),
+        ]));
+        kids.push(el('div', { class: 'field' }, [
+          el('label', { text: `Level — ${data.level}` }),
+          el('input', { type: 'range', min: 1, max: 20, value: data.level, oninput: (e) => { data.level = Number(e.target.value); render(); } }),
+        ]));
+        kids.push(el('div', { class: 'hint', text: `${data.cls.name}: d${data.cls.hd} hit die · key ability ${data.cls.prime.map((p) => p.toUpperCase()).join(' / ')}` }));
+      } else if (step === 1) {
+        kids.push(el('h2', { text: 'Ability scores' }));
+        kids.push(el('div', { class: 'btnrow', style: 'margin-bottom:10px' }, [
+          el('button', { class: 'btn ghost', text: 'Standard array', onclick: () => { assignStdArray(data.scores, data.cls); render(); } }),
+          el('button', { class: 'btn ghost', text: 'Reset to 10', onclick: () => { ABILITY_KEYS.forEach(([k]) => { data.scores[k] = 10; }); render(); } }),
+        ]));
+        ABILITY_KEYS.forEach(([k, lbl]) => {
+          const mod = abilityMod(data.scores[k]);
+          kids.push(el('div', { class: 'abrow' }, [
+            el('span', { class: 'ab-l', text: lbl }),
+            el('button', { class: 'step', text: '−', onclick: () => { data.scores[k] = Math.max(1, data.scores[k] - 1); render(); } }),
+            el('span', { class: 'ab-v', text: String(data.scores[k]) }),
+            el('button', { class: 'step', text: '+', onclick: () => { data.scores[k] = Math.min(30, data.scores[k] + 1); render(); } }),
+            el('span', { class: 'ab-m', text: signedStr(mod) }),
+          ]));
+        });
+        kids.push(el('div', { class: 'hint', text: 'Standard array is 15,14,13,12,10,8 (placed by class). Tune freely — you can change these any time.' }));
+      } else {
+        const conMod = abilityMod(data.scores.con);
+        const hp = hpFor(data.cls.hd, conMod, data.level);
+        kids.push(el('h2', { text: 'Review' }));
+        kids.push(el('div', { class: 'review' }, [
+          revRow('Name', data.name.trim() || 'New Hero'),
+          revRow('Class & level', `${data.cls.name} ${data.level}`),
+          revRow('Scores', ABILITY_KEYS.map(([k, l]) => `${l} ${data.scores[k]}`).join('  ·  ')),
+          revRow('Max HP', String(hp)),
+        ]));
+        kids.push(el('div', { class: 'hint', text: 'Creates a full 5e sheet with these values. Everything stays editable afterwards.' }));
+      }
+
+      const nav = [el('button', { class: 'btn ghost', text: step === 0 ? 'Cancel' : 'Back', onclick: () => { if (step === 0) closeOverlay(); else { step--; render(); } } })];
+      if (step < steps.length - 1) nav.push(el('button', { class: 'btn primary', text: 'Next', onclick: () => { step++; render(); } }));
+      else nav.push(el('button', { class: 'btn primary', text: 'Create character', onclick: () => createFromBuilder(data) }));
+      kids.push(el('div', { class: 'btnrow' }, nav));
+      return sheetCard(kids);
     },
   };
   render();
+}
+function revRow(k, v) { return el('div', { class: 'rev-row' }, [el('span', { class: 'rev-k', text: k }), el('span', { class: 'rev-v', text: v })]); }
+function createFromBuilder(data) {
+  const c = dnd5eCharacter(data.name.trim() || 'New Hero');
+  const set = (id, patch) => { const v = c.values.find((x) => x.id === id); if (v) Object.assign(v, patch); };
+  set('char_class', { text: data.cls.name });
+  set('level', { value: data.level });
+  ABILITY_KEYS.forEach(([k, , full]) => set(full, { value: data.scores[k] }));
+  const hp = hpFor(data.cls.hd, abilityMod(data.scores.con), data.level);
+  set('hp_max', { value: hp });
+  set('hp_current', { value: hp });
+  state.save.characters.push(c);
+  state.save.activeCharacterId = c.id;
+  state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
+  commit();
+  toast(`Created ${c.name} — level ${data.level} ${data.cls.name}.`);
 }
 
 // ================================================================ PAGES (edit)
@@ -858,8 +995,6 @@ function openWidgetConfig(w, page) {
     render() {
       const c = activeChar();
       const v = valueById(w.ref);
-      const size = w.cols >= 2 && w.rows >= 3 ? 'L' : w.cols >= 2 ? 'M' : 'S';
-      const setSize = (s) => { if (s === 'S') { w.cols = 1; w.rows = 1; } else if (s === 'M') { w.cols = 2; w.rows = 1; } else { w.cols = 2; w.rows = 3; } commit(); };
       const valueOptions = (sel, allowNone) => el('select', {
         onchange: (e) => sel(e.target.value || undefined),
       }, [
@@ -885,21 +1020,23 @@ function openWidgetConfig(w, page) {
 
       return sheetCard([
         el('h2', { text: 'Configure widget' }),
-        el('p', { class: 'desc', text: v ? `Display face follows the bound value's kind (${v.kind}).` : 'Bind this widget to a value.' }),
+        el('p', { class: 'desc', text: v ? `Tap this card in play mode to open its details. Resize it with the ⤡ handle on the card.` : 'Bind this widget to a value.' }),
         el('div', { class: 'field' }, [el('label', { text: 'Bound value (ref)' }), refSel]),
         el('div', { class: 'field' }, [el('label', { text: 'Secondary value (optional)' }), secSel]),
-        el('div', { class: 'field' }, [
-          el('label', { text: 'Size' }),
-          el('div', { class: 'seg small' }, ['S', 'M', 'L'].map((s) => el('button', { class: size === s ? 'on' : '', text: s, onclick: () => setSize(s) }))),
+        el('div', { class: 'toggle-row', style: 'margin-top:2px' }, [
+          el('div', {}, [
+            el('div', { class: 'theme-nm', text: 'Editable in play mode' }),
+            el('div', { class: 'desc', style: 'margin:0', text: 'Adjust this value directly on the sheet (e.g. HP −/+, notes). Off = read-only, tap for details.' }),
+          ]),
+          el('button', {
+            class: `switch ${w.editableInPlay ? 'on' : ''}`, role: 'switch', 'aria-checked': String(!!w.editableInPlay),
+            onclick: () => { w.editableInPlay = !w.editableInPlay; commit(); },
+          }, el('span', { class: 'knob' })),
         ]),
-        el('div', { class: 'field' }, [
-          el('label', { text: 'Tap action' }),
-          el('div', { class: 'seg small' }, ['none', 'detail', 'roll'].map((t) => el('button', { class: (w.tap || 'none') === t ? 'on' : '', text: t, onclick: () => { w.tap = t; commit(); } }))),
-        ]),
-        el('div', { class: 'field' }, [
-          el('label', { text: 'Roll override (else uses value.roll)' }),
+        el('div', { class: 'field', style: 'margin-top:14px' }, [
+          el('label', { text: 'Roll override (else uses value’s own roll)' }),
           el('input', { placeholder: v?.roll ? `inherits: ${v.roll}` : 'e.g. 1d20 + str_mod', value: w.rollOverride || '', oninput: (e) => { w.rollOverride = e.target.value || undefined; store.save(state.save); } }),
-          el('div', { class: 'hint', text: 'rollOverride wins; otherwise the bound value’s own roll is used.' }),
+          el('div', { class: 'hint', text: 'Adds a roll button in this card’s details. The value’s own rolls also appear.' }),
         ]),
         el('div', { class: 'btnrow' }, [
           el('button', { class: 'btn ghost', text: '⧉ Duplicate', onclick: () => duplicateWidget(w, page) }),
@@ -1145,7 +1282,29 @@ function openPackImport(c, pack) {
   render();
 }
 
+// --- one-time layout migration ---------------------------------------------
+// v1 used a 2-column grid (cols 1|2, rows 1..3) with a per-widget `tap` enum.
+// v2 uses a 4-column fine grid (cols 1–4, rows are a growable floor) and a
+// per-widget `editableInPlay` flag; all taps open Details. Scale old layouts
+// ×2 and translate `tap:'none'` (directly-editable faces) → editableInPlay.
+function migrateSave(save) {
+  if (save.layoutScale === 4) return;
+  for (const c of save.characters || []) {
+    for (const p of c.pages || []) {
+      for (const w of p.widgets || []) {
+        w.cols = Math.max(1, Math.min(4, (w.cols || 1) * 2));
+        w.rows = Math.max(1, (w.rows || 1) * 2);
+        if (w.kind === 'bound') w.editableInPlay = (w.tap === undefined || w.tap === 'none');
+        delete w.tap;
+      }
+    }
+  }
+  save.layoutScale = 4;
+}
+
 // --- boot ------------------------------------------------------------------
+migrateSave(state.save);
+store.saveNow(state.save);
 applyTheme(state.theme);
 if (new URLSearchParams(location.search).get('sheet') && state.save.activeCharacterId) state.view = 'sheet';
 render();

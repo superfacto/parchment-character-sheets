@@ -30,7 +30,7 @@ export function setFlag(k) {
 }
 
 export function emptySave() {
-  return { schemaVersion: SCHEMA_VERSION, exportedAt: null, activeCharacterId: null, characters: [] };
+  return { schemaVersion: SCHEMA_VERSION, exportedAt: null, activeCharacterId: null, characters: [], layoutScale: 4 };
 }
 
 export function load() {

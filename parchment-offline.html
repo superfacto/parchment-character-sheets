@@ -146,17 +146,19 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
 .dot.on { background: var(--oxblood); }
 
-/* Widget grid — responsive 2-col stack (§8.1) */
-.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--gap); align-content: start; }
+/* Widget grid — 4-column fine grid (§8.1). Columns 1–4 (1 = half of the old
+   "small"); rows are a growable floor so tall faces never clip. */
+.grid { display: grid; grid-template-columns: repeat(4, 1fr); grid-auto-rows: minmax(40px, auto); gap: var(--gap); align-content: start; }
 .wdg {
   position: relative;
   background: var(--card);
   border: 1.5px solid var(--border);
   border-radius: var(--radius);
-  min-height: 64px;
+  min-height: 0;
   padding: 10px 12px;
   display: flex; flex-direction: column; justify-content: center;
   box-shadow: 0 1px 0 rgba(0,0,0,0.03);
+  overflow: hidden;
 }
 .wdg.tappable { cursor: pointer; }
 .wdg.tappable:active { transform: scale(0.985); }
@@ -180,26 +182,43 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 .wdg.label { background: transparent; border: 0; box-shadow: none; min-height: 0; padding: 12px 4px 2px; justify-content: end; }
 .wdg.label .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--oxblood); font-weight: 700; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
 
-/* span helpers */
-.c2 { grid-column: span 2; }
-.r2 { grid-row: span 2; }
-.r3 { grid-row: span 3; }
-
-/* Edit-mode widget chrome — index cards */
-.frame.edit .wdg { border-style: dashed; }
-.wdg .drag { position: absolute; top: 2px; left: 2px; color: var(--muted); font-size: 15px; cursor: grab; padding: 6px 9px; touch-action: none; }
-.wdg .editrow { position: absolute; bottom: 6px; right: 8px; display: flex; gap: 6px; align-items: center; }
-.szchip { border: 1px solid var(--line); background: var(--paper); border-radius: 6px; font-size: 10px; font-weight: 700; padding: 1px 5px; color: var(--muted); }
-.wdg .cfg { border: 1px solid var(--line); background: var(--paper); border-radius: 6px; font-size: 13px; padding: 7px 11px; min-height: 34px; }
-.wdg .cfg:active { transform: scale(0.94); }
+/* Edit-mode widget chrome — index cards. Move handle centered; a gear and a
+   resize icon sit in the corners. Size is set on the card, not in a menu. */
+.frame.edit .wdg { border-style: dashed; overflow: visible; }
+.frame.edit .wdg.editing { min-height: 52px; }
+.wdg .drag.center {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  z-index: 3; color: var(--oxblood); font-size: 20px; line-height: 1; cursor: grab; touch-action: none;
+  width: 40px; height: 40px; border-radius: 999px; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--card) 82%, transparent); border: 1px solid var(--line);
+  box-shadow: 0 1px 4px rgba(0,0,0,0.15);
+}
+.wdg .drag.center:active { cursor: grabbing; transform: translate(-50%, -50%) scale(0.92); }
+.wdg .wbtn {
+  position: absolute; z-index: 3; width: 30px; height: 30px; padding: 0; border-radius: 8px;
+  border: 1px solid var(--line); background: var(--paper); color: var(--muted); font-size: 14px;
+  display: grid; place-items: center; line-height: 1;
+}
+.wdg .wbtn.cfg { top: 4px; right: 4px; }
+.wdg .wbtn.rz { top: 4px; left: 4px; }
+.wdg .wbtn.rz.on { background: var(--oxblood); color: #fff; border-color: var(--oxblood); }
+.wdg .wbtn:active { transform: scale(0.9); }
 /* Invisible hit-area expanders so the small corner affordances hit ~44px on touch. */
-.wdg .editnum::after, .wdg .drag::after, .wdg .cfg::after { content: ""; position: absolute; inset: -10px; }
-.wdg .cfg { position: relative; }
-.wdg.editing { padding-top: 22px; }
+.wdg .editnum::after, .wdg .wbtn::after { content: ""; position: absolute; inset: -8px; }
 .wdg.dragging { opacity: 0.4; }
 .wdg.dragover { outline: 2px solid var(--oxblood); outline-offset: 1px; }
+.wdg.resizing { outline: 2px dashed var(--oxblood); outline-offset: 2px; }
+/* Bottom-right corner grip shown while a card is in resize mode. */
+.wdg .resizegrip {
+  position: absolute; bottom: -2px; right: -2px; width: 26px; height: 26px; z-index: 4;
+  cursor: nwse-resize; touch-action: none;
+  background:
+    linear-gradient(135deg, transparent 46%, var(--oxblood) 46%, var(--oxblood) 60%, transparent 60%, transparent 74%, var(--oxblood) 74%, var(--oxblood) 88%, transparent 88%);
+  border-bottom-right-radius: var(--radius);
+}
+.wdg .resizegrip::after { content: ""; position: absolute; inset: -10px; }
 .addtile {
-  grid-column: span 2; border: 1.5px dashed var(--oxblood); background: transparent;
+  grid-column: span 4; border: 1.5px dashed var(--oxblood); background: transparent;
   border-radius: var(--radius); color: var(--oxblood); font-weight: 600; padding: 14px; font-size: 14px;
 }
 
@@ -300,9 +319,37 @@ input, textarea, select { font-family: inherit; font-size: 16px; }
 .wdg.statface .wl { align-self: center; }
 .statmod { font-family: var(--display); font-size: 40px; font-weight: 700; line-height: 1; margin: 2px 0 8px; }
 .statmod.err { color: var(--oxblood); font-size: 22px; }
-.statscore { border: 1.5px solid var(--border); background: var(--paper); border-radius: 999px; min-width: 48px; height: 34px; padding: 0 12px; font-family: var(--display); font-size: 17px; font-weight: 650; color: var(--ink); }
+.statscore { border: 1.5px solid var(--border); background: var(--paper); border-radius: 999px; min-width: 48px; height: 34px; padding: 0 12px; font-family: var(--display); font-size: 17px; font-weight: 650; color: var(--ink); display: inline-grid; place-items: center; }
 .statscore:active { transform: scale(0.95); }
+.statscore.static:active { transform: none; }
 .statface input.inlinenum { width: 72px; text-align: center; font-size: 22px; border-bottom: 2px solid var(--oxblood); margin: 0 auto; }
+
+/* Live-editable single-line text face (editable-in-play) */
+.wdg input.inlinetext-live { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; font-family: var(--display); font-size: 18px; font-weight: 550; color: var(--ink); padding: 2px 0; margin-top: 2px; }
+.wdg input.inlinetext-live:focus { outline: none; border-bottom-color: var(--oxblood); }
+
+/* New-character start list + guided builder */
+.startlist button { align-items: flex-start; }
+.startlist .opt-t { font-weight: 650; font-size: 15px; }
+.startlist .opt-d { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.wiz-steps { display: flex; gap: 6px; margin: 0 0 12px; flex-wrap: wrap; }
+.wiz-step { font-size: 11px; font-weight: 700; letter-spacing: 0.4px; text-transform: uppercase; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 4px 10px; }
+.wiz-step.on { color: #fff; background: var(--oxblood); border-color: var(--oxblood); }
+.wiz-step.done { color: var(--oxblood); border-color: var(--oxblood); }
+.class-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.class-grid button { min-height: 42px; border: 1px solid var(--line); background: var(--card); border-radius: var(--radius); font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px; }
+.class-grid button.on { background: var(--oxblood); color: #fff; border-color: var(--oxblood); }
+.abrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); }
+.abrow .ab-l { flex: 0 0 40px; font-weight: 700; font-size: 13px; letter-spacing: 0.5px; }
+.abrow .ab-v { flex: 0 0 34px; text-align: center; font-family: var(--display); font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.abrow .ab-m { flex: 1; text-align: right; font-family: var(--display); font-size: 18px; font-weight: 700; color: var(--oxblood); }
+.abrow .step { flex: none; }
+.review { border: 1px solid var(--line); border-radius: var(--radius); background: var(--card); padding: 4px 12px; margin: 6px 0 12px; }
+.rev-row { display: flex; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.rev-row:last-child { border-bottom: 0; }
+.rev-k { flex: 0 0 96px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); align-self: center; }
+.rev-v { flex: 1; font-weight: 600; font-size: 14px; }
+input[type=range] { accent-color: var(--oxblood); width: 100%; min-height: 32px; }
 
 /* −/+ stepper for editable numbers (HP etc.) */
 .wdg .steprow { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
@@ -776,7 +823,10 @@ const _internal = { rollDice, evalRPN };
 
 // ===== preset.js =====
 // The shipped D&D 5e preset (SPEC §10). Fully editable after creation.
-// v1: saves/skills are raw ability mods (no proficiency toggle yet).
+// Mirrors the layout of the official 5e sheet: abilities + modifiers, all six
+// saves, the full 18-skill list, AC/initiative/speed, HP, attacks, and bio.
+// v2: saves/skills are raw ability mods (proficiency toggle still deferred —
+// it needs a boolean value kind).
 
 const ABILITIES = [
   ['strength', 'Strength', 'str'],
@@ -787,13 +837,26 @@ const ABILITIES = [
   ['charisma', 'Charisma', 'cha'],
 ];
 
+// Full 5e skill list with governing ability (official sheet order per ability).
 const SKILLS = [
-  ['athletics', 'Athletics', 'str'],
   ['acrobatics', 'Acrobatics', 'dex'],
-  ['stealth', 'Stealth', 'dex'],
-  ['perception', 'Perception', 'wis'],
+  ['animal_handling', 'Animal Handling', 'wis'],
+  ['arcana', 'Arcana', 'int'],
+  ['athletics', 'Athletics', 'str'],
+  ['deception', 'Deception', 'cha'],
+  ['history', 'History', 'int'],
+  ['insight', 'Insight', 'wis'],
+  ['intimidation', 'Intimidation', 'cha'],
   ['investigation', 'Investigation', 'int'],
+  ['medicine', 'Medicine', 'wis'],
+  ['nature', 'Nature', 'int'],
+  ['perception', 'Perception', 'wis'],
+  ['performance', 'Performance', 'cha'],
   ['persuasion', 'Persuasion', 'cha'],
+  ['religion', 'Religion', 'int'],
+  ['sleight_of_hand', 'Sleight of Hand', 'dex'],
+  ['stealth', 'Stealth', 'dex'],
+  ['survival', 'Survival', 'wis'],
 ];
 
 let n = 0;
@@ -806,10 +869,15 @@ function newId(prefix = 'id') {
 function dnd5eCharacter(name = 'New Hero') {
   const values = [];
 
+  // Bio
   values.push({ id: 'char_class', label: 'Class', kind: 'text', text: 'Fighter', group: 'Bio' });
   values.push({ id: 'level', label: 'Level', kind: 'number', value: 1, group: 'Bio' });
+  values.push({ id: 'race', label: 'Race', kind: 'text', text: '', group: 'Bio' });
+  values.push({ id: 'background', label: 'Background', kind: 'text', text: '', group: 'Bio' });
+  values.push({ id: 'alignment', label: 'Alignment', kind: 'text', text: '', group: 'Bio' });
   values.push({ id: 'proficiency_bonus', label: 'Prof', kind: 'calc', formula: '2 + floor((level - 1) / 4)', signed: true, group: 'Bio' });
 
+  // Abilities + modifiers
   for (const [id, label] of ABILITIES) {
     values.push({ id, label, kind: 'number', value: 10, group: 'Abilities' });
   }
@@ -817,12 +885,14 @@ function dnd5eCharacter(name = 'New Hero') {
     values.push({ id, label, kind: 'calc', formula: `floor((${ab} - 10) / 2)`, signed: true, group: 'Abilities' });
   }
 
+  // Combat
   values.push({ id: 'armor_class', label: 'AC', kind: 'calc', formula: '10 + dex_mod', group: 'Combat' });
   values.push({ id: 'initiative', label: 'Initiative', kind: 'calc', formula: 'dex_mod', signed: true, group: 'Combat' });
+  values.push({ id: 'speed', label: 'Speed', kind: 'number', value: 30, group: 'Combat' });
   values.push({ id: 'hp_current', label: 'HP', kind: 'number', value: 10, group: 'Combat' });
   values.push({ id: 'hp_max', label: 'Max HP', kind: 'number', value: 10, group: 'Combat' });
 
-  // Saving throws — raw ability mods in v1 (proficiency deferred to v1.1).
+  // Saving throws — raw ability mods (proficiency deferred).
   for (const [, , ab] of ABILITIES) {
     values.push({ id: `save_${ab}`, label: `${ab.toUpperCase()} Save`, kind: 'calc', formula: `${ab}_mod`, signed: true, group: 'Saves' });
   }
@@ -831,52 +901,81 @@ function dnd5eCharacter(name = 'New Hero') {
   for (const [id, label, ab] of SKILLS) {
     values.push({ id, label, kind: 'calc', formula: `${ab}_mod`, signed: true, group: 'Skills' });
   }
+  values.push({ id: 'passive_perception', label: 'Passive Perception', kind: 'calc', formula: '10 + perception', group: 'Skills' });
 
-  // Example weapons demonstrating the roll model.
+  // Example weapons demonstrating the multi-roll model.
   values.push({ id: 'longsword', label: 'Longsword', kind: 'text', text: 'Longsword', description: 'Versatile (1d10). Melee, 5 ft.', group: 'Attacks',
     rolls: [{ name: 'Attack', expr: '1d20 + str_mod + proficiency_bonus' }, { name: 'Damage', expr: '1d8 + str_mod' }] });
   values.push({ id: 'shortbow', label: 'Shortbow', kind: 'text', text: 'Shortbow', description: 'Ranged, 80/320 ft.', group: 'Attacks',
     rolls: [{ name: 'Attack', expr: '1d20 + dex_mod + proficiency_bonus' }, { name: 'Damage', expr: '1d6 + dex_mod' }] });
 
-  const w = (o) => ({ kind: 'bound', cols: 1, rows: 1, tap: 'none', ...o, id: newId('w') });
+  // Bio / freeform
+  values.push({ id: 'features', label: 'Features & Traits', kind: 'text', text: '', group: 'Bio' });
+  values.push({ id: 'equipment', label: 'Equipment', kind: 'text', text: '', group: 'Bio' });
+  values.push({ id: 'notes', label: 'Notes', kind: 'text', text: '', group: 'Bio' });
+
+  // Widget helper. cols/rows are authored in the intuitive 2-col scale and
+  // scaled ×2 onto the 4-column fine grid. editableInPlay off by default.
+  const w = (o) => {
+    const { cols = 1, rows = 1, tap, editableInPlay = false, ...rest } = o;
+    return { kind: 'bound', editableInPlay, ...rest, cols: cols * 2, rows: rows * 2, id: newId('w') };
+  };
 
   const pages = [
     {
       id: newId('page'), name: 'Core',
       widgets: [
-        w({ ref: 'char_class', secondaryRef: 'level', cols: 2, tap: 'none' }),
-        w({ ref: 'strength', secondaryRef: 'str_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + str_mod' }),
-        w({ ref: 'dexterity', secondaryRef: 'dex_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + dex_mod' }),
-        w({ ref: 'constitution', secondaryRef: 'con_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + con_mod' }),
-        w({ ref: 'intelligence', secondaryRef: 'int_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + int_mod' }),
-        w({ ref: 'wisdom', secondaryRef: 'wis_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + wis_mod' }),
-        w({ ref: 'charisma', secondaryRef: 'cha_mod', face: 'stat', tap: 'detail', rollOverride: '1d20 + cha_mod' }),
-        w({ ref: 'proficiency_bonus', tap: 'detail' }),
-        w({ ref: 'armor_class', tap: 'detail' }),
-        w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, tap: 'none' }),
+        w({ ref: 'char_class', secondaryRef: 'level', cols: 2 }),
+        w({ ref: 'strength', secondaryRef: 'str_mod', face: 'stat', rollOverride: '1d20 + str_mod' }),
+        w({ ref: 'dexterity', secondaryRef: 'dex_mod', face: 'stat', rollOverride: '1d20 + dex_mod' }),
+        w({ ref: 'constitution', secondaryRef: 'con_mod', face: 'stat', rollOverride: '1d20 + con_mod' }),
+        w({ ref: 'intelligence', secondaryRef: 'int_mod', face: 'stat', rollOverride: '1d20 + int_mod' }),
+        w({ ref: 'wisdom', secondaryRef: 'wis_mod', face: 'stat', rollOverride: '1d20 + wis_mod' }),
+        w({ ref: 'charisma', secondaryRef: 'cha_mod', face: 'stat', rollOverride: '1d20 + cha_mod' }),
+        w({ ref: 'proficiency_bonus' }),
+        w({ ref: 'passive_perception' }),
       ],
     },
     {
       id: newId('page'), name: 'Combat',
       widgets: [
-        w({ ref: 'armor_class', tap: 'detail' }),
-        w({ ref: 'initiative', tap: 'detail', rollOverride: '1d20 + initiative' }),
-        w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, tap: 'none' }),
+        w({ ref: 'armor_class' }),
+        w({ ref: 'initiative', rollOverride: '1d20 + initiative' }),
+        w({ ref: 'speed' }),
+        w({ ref: 'proficiency_bonus' }),
+        w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, editableInPlay: true }),
         w({ kind: 'label', title: 'Saving Throws', cols: 2 }),
-        w({ ref: 'save_str', tap: 'detail', rollOverride: '1d20 + save_str' }),
-        w({ ref: 'save_dex', tap: 'detail', rollOverride: '1d20 + save_dex' }),
-        w({ ref: 'save_con', tap: 'detail', rollOverride: '1d20 + save_con' }),
-        w({ ref: 'save_wis', tap: 'detail', rollOverride: '1d20 + save_wis' }),
+        w({ ref: 'save_str', rollOverride: '1d20 + save_str' }),
+        w({ ref: 'save_dex', rollOverride: '1d20 + save_dex' }),
+        w({ ref: 'save_con', rollOverride: '1d20 + save_con' }),
+        w({ ref: 'save_int', rollOverride: '1d20 + save_int' }),
+        w({ ref: 'save_wis', rollOverride: '1d20 + save_wis' }),
+        w({ ref: 'save_cha', rollOverride: '1d20 + save_cha' }),
         w({ kind: 'label', title: 'Attacks', cols: 2 }),
-        w({ ref: 'longsword', cols: 2, tap: 'detail' }),
-        w({ ref: 'shortbow', cols: 2, tap: 'detail' }),
+        w({ ref: 'longsword', cols: 2 }),
+        w({ ref: 'shortbow', cols: 2 }),
       ],
     },
     {
       id: newId('page'), name: 'Skills',
       widgets: [
-        w({ kind: 'label', title: 'Skills (roll a check)', cols: 2 }),
-        ...SKILLS.map(([id]) => w({ ref: id, tap: 'detail', rollOverride: `1d20 + ${id}` })),
+        w({ kind: 'label', title: 'Skills (tap to roll a check)', cols: 2 }),
+        ...SKILLS.map(([id]) => w({ ref: id, rollOverride: `1d20 + ${id}` })),
+        w({ ref: 'passive_perception', cols: 2 }),
+      ],
+    },
+    {
+      id: newId('page'), name: 'Bio',
+      widgets: [
+        w({ ref: 'race' }),
+        w({ ref: 'background' }),
+        w({ ref: 'alignment', cols: 2 }),
+        w({ kind: 'label', title: 'Features & Traits', cols: 2 }),
+        w({ ref: 'features', cols: 2, rows: 3, editableInPlay: true }),
+        w({ kind: 'label', title: 'Equipment', cols: 2 }),
+        w({ ref: 'equipment', cols: 2, rows: 3, editableInPlay: true }),
+        w({ kind: 'label', title: 'Notes', cols: 2 }),
+        w({ ref: 'notes', cols: 2, rows: 3, editableInPlay: true }),
       ],
     },
   ];
@@ -898,7 +997,7 @@ function blankCharacter(name = 'New Character') {
     preset: 'blank',
     createdAt: new Date().toISOString(),
     values: [{ id: 'notes', label: 'Notes', kind: 'text', text: '', group: 'General' }],
-    pages: [{ id: newId('page'), name: 'Page 1', widgets: [{ id: newId('w'), kind: 'bound', ref: 'notes', cols: 2, rows: 3, tap: 'none' }] }],
+    pages: [{ id: newId('page'), name: 'Page 1', widgets: [{ id: newId('w'), kind: 'bound', ref: 'notes', cols: 4, rows: 6, editableInPlay: true }] }],
   };
 }
 
@@ -934,7 +1033,7 @@ function setFlag(k) {
 }
 
 function emptySave() {
-  return { schemaVersion: SCHEMA_VERSION, exportedAt: null, activeCharacterId: null, characters: [] };
+  return { schemaVersion: SCHEMA_VERSION, exportedAt: null, activeCharacterId: null, characters: [], layoutScale: 4 };
 }
 
 function load() {
@@ -1120,6 +1219,7 @@ const state = {
   pageIndex: 0,
   overlay: null,       // { type, ... }
   toast: null,
+  resizing: null,      // widget id currently in drag-to-resize mode
   theme: store.loadTheme(),
   rollAnim: store.loadRollAnim(),
   rollLog: [],
@@ -1216,6 +1316,7 @@ function addWeapon(page) {
 // --- render dispatch -------------------------------------------------------
 function render() {
   recompute();
+  if (state.mode !== 'edit') state.resizing = null;
   const app = $('#app');
   app.innerHTML = '';
   // Overlays/toasts live on <body>, not inside #app — clear the stale ones so
@@ -1329,25 +1430,29 @@ function renderSheet() {
   // One-time hint so the tap-to-detail/roll markers are discoverable.
   if (state.mode === 'play' && !store.getFlag('rollhint')) {
     store.setFlag('rollhint');
-    setTimeout(() => toast('Tap a card for details & to roll 🎲 · swipe for more pages'), 500);
+    setTimeout(() => toast('Tap any card for details & to roll 🎲 · swipe for pages · Edit to rearrange'), 500);
   }
   return [appbar, pagebar, sheet];
 }
 
 function renderWidget(w, index, page) {
+  const editing = state.mode === 'edit';
+  const play = state.mode === 'play';
+
   if (w.kind === 'label') {
-    const node = el('div', { class: 'wdg label c2' }, [el('div', { class: 'lbl', text: w.title || 'Section' })]);
-    if (state.mode === 'edit') decorateEdit(node, w, index, page);
+    const node = el('div', { class: 'wdg label' }, [el('div', { class: 'lbl', text: w.title || 'Section' })]);
+    setSpan(node, w);
+    if (editing) decorateEdit(node, w, index, page);
     return node;
   }
 
   const v = valueById(w.ref);
-  const spanClass = `${(w.cols || 1) >= 2 ? 'c2' : ''} ${w.rows === 2 ? 'r2' : w.rows >= 3 ? 'r3' : ''}`;
-  const node = el('div', { class: `wdg ${spanClass}` });
+  const node = el('div', { class: 'wdg' });
+  setSpan(node, w);
 
   if (!v) {
     node.append(el('div', { class: 'wl', text: w.ref || '—' }), el('div', { class: 'wv err', text: 'ERR' }));
-    if (state.mode === 'edit') decorateEdit(node, w, index, page);
+    if (editing) decorateEdit(node, w, index, page);
     return node;
   }
 
@@ -1355,29 +1460,29 @@ function renderWidget(w, index, page) {
   node.append(el('div', { class: 'wl', text: label }));
 
   const rolls = rollsFor(v, w);
-  // Display face derived from bound value kind (§9).
-  const numberHasTap = v.kind === 'number' && w.tap && w.tap !== 'none';
-  const weaponFace = v.kind === 'text' && rolls.length && state.mode === 'play';
-  const statFace = w.face === 'stat' && state.mode === 'play';
-  if (statFace) {
-    // Classic 5e ability box: big signed modifier (hero) + editable score pill.
-    const mod = valueById(w.secondaryRef);
+  // In play mode a widget is either directly editable (opt-in per widget) or a
+  // clean read-only face you tap to open Details. Editing lives behind the
+  // "editable in play" tick; everything else opens Details (rolls live there).
+  const editableFace = play && w.editableInPlay;
+  const weaponFace = v.kind === 'text' && rolls.length && play && !editableFace;
+  let tappable = play;   // read-only faces open Details on tap
+
+  if (w.face === 'stat' && play) {
+    // Classic 5e ability box: big modifier (hero) over the score.
     node.classList.add('statface');
+    const mod = valueById(w.secondaryRef);
     node.append(el('div', { class: `statmod ${mod && displayValue(mod) === 'ERR' ? 'err' : ''}`, text: mod ? displayValue(mod) : '—' }));
-    const pill = el('button', { class: 'statscore', title: 'Edit score' }, String(v.value ?? 0));
-    pill.addEventListener('click', (e) => { e.stopPropagation(); editInline(pill, v, 'number'); });
-    node.append(pill);
-  } else if (weaponFace) {
-    // A weapon/item shows a computed roll summary — "1d20 + 5" / "1d8 + 3".
-    const rows = el('div', { class: 'rollrows' });
-    rolls.forEach((r) => rows.append(el('div', { class: 'rollrow' }, [
-      el('span', { class: 'rn', text: r.name || 'Roll' }),
-      el('span', { class: 'rp', text: previewRoll(r.expr, rollResolve) }),
-    ])));
-    node.append(rows);
-  } else if (v.kind === 'number' && state.mode === 'play' && !numberHasTap) {
-    // Directly editable number with a −/+ stepper for quick HP-style adjustments.
-    node.classList.add('num');
+    if (editableFace) {
+      const pill = el('button', { class: 'statscore', title: 'Edit score' }, String(v.value ?? 0));
+      pill.addEventListener('click', (e) => { e.stopPropagation(); editInline(pill, v, 'number'); });
+      node.append(pill);
+    } else {
+      node.append(el('div', { class: 'statscore static', text: String(v.value ?? 0) }));
+    }
+    // The whole card still opens Details (to roll the check).
+  } else if (editableFace && v.kind === 'number') {
+    // Directly editable number with a −/+ stepper (HP-style quick adjust).
+    node.classList.add('num'); tappable = false;
     const input = el('input', {
       type: 'number', value: v.value ?? 0, inputmode: 'numeric',
       onchange: (e) => { v.value = e.target.value === '' ? 0 : Number(e.target.value); commit(); },
@@ -1388,46 +1493,52 @@ function renderWidget(w, index, page) {
       el('button', { class: 'step', text: '−', onclick: step(-1) }), input,
       el('button', { class: 'step', text: '+', onclick: step(1) }),
     ]));
-  } else if (numberHasTap && state.mode === 'play') {
-    // Tap is reserved for the roll/detail action; editing is via the ✎ affordance.
-    node.append(el('div', { class: 'wv', text: String(v.value ?? 0) }));
-    const pencil = el('button', { class: 'editnum', text: '✎', title: 'Edit value' });
-    pencil.addEventListener('click', (e) => { e.stopPropagation(); editInline(node.querySelector('.wv'), v, 'number'); });
-    node.append(pencil);
-  } else if (v.kind === 'text' && (w.rows || 1) >= 2 && state.mode === 'play' && w.tap === 'none') {
-    const ta = el('textarea', { rows: (w.rows || 2) * 2, oninput: (e) => { v.text = e.target.value; store.save(state.save); } }, []);
-    ta.value = v.text || '';
-    ta.addEventListener('click', (e) => e.stopPropagation());
-    node.append(ta);
-  } else if (v.kind === 'text' && state.mode === 'play' && w.tap === 'none') {
-    // Single-line text (class, notes) — editable inline via the ✎ affordance.
-    node.append(el('div', { class: 'wv text', text: v.text || '—' }));
-    const pencil = el('button', { class: 'editnum', text: '✎', title: 'Edit text' });
-    pencil.addEventListener('click', (e) => { e.stopPropagation(); editInline(node.querySelector('.wv'), v, 'text'); });
-    node.append(pencil);
+  } else if (editableFace && v.kind === 'text') {
+    tappable = false;
+    if ((w.rows || 2) >= 4) {
+      const ta = el('textarea', { rows: Math.max(2, Math.round((w.rows || 4) / 2) * 2), oninput: (e) => { v.text = e.target.value; store.save(state.save); } }, []);
+      ta.value = v.text || '';
+      ta.addEventListener('click', (e) => e.stopPropagation());
+      node.append(ta);
+    } else {
+      const inp = el('input', { class: 'inlinetext-live', value: v.text || '', oninput: (e) => { v.text = e.target.value; store.save(state.save); } });
+      inp.addEventListener('click', (e) => e.stopPropagation());
+      node.append(inp);
+    }
+  } else if (weaponFace) {
+    // A weapon/item shows a computed roll summary — "1d20 + 5" / "1d8 + 3".
+    const rows = el('div', { class: 'rollrows' });
+    rolls.forEach((r) => rows.append(el('div', { class: 'rollrow' }, [
+      el('span', { class: 'rn', text: r.name || 'Roll' }),
+      el('span', { class: 'rp', text: previewRoll(r.expr, rollResolve) }),
+    ])));
+    node.append(rows);
   } else {
     const disp = displayValue(v);
     node.append(el('div', { class: `wv ${v.kind === 'text' ? 'text' : ''} ${disp === 'ERR' ? 'err' : ''}`, text: disp }));
   }
 
-  if (w.secondaryRef && !weaponFace && !statFace) {
+  if (w.secondaryRef && w.face !== 'stat' && !weaponFace) {
     const s = valueById(w.secondaryRef);
     if (s) node.append(el('div', { class: 'ws', text: `${s.label}: ${displayValue(s)}` }));
   }
 
-  // Tap markers. Default tap opens the detail panel (which carries a Roll
-  // button per roll); tap:'roll' with a single roll is the opt-in insta-roll.
-  if (state.mode === 'play' && w.tap && w.tap !== 'none') {
+  if (tappable) {
     node.append(el('div', { class: 'marker', text: rolls.length ? '🎲' : 'ⓘ' }));
     node.classList.add('tappable');
-    node.addEventListener('click', () => {
-      if (w.tap === 'roll' && rolls.length === 1) openRoll(v, rolls[0].expr, label);
-      else openDetail(v, label, rolls);
-    });
+    node.addEventListener('click', () => openDetail(v, label, rolls));
   }
 
-  if (state.mode === 'edit') decorateEdit(node, w, index, page);
+  if (editing) decorateEdit(node, w, index, page);
   return node;
+}
+
+// Place a widget on the 4-column fine grid. Columns 1–4 (1 = half of old
+// "small"); rows are a growable floor so tall faces never clip. Labels keep
+// their natural height.
+function setSpan(node, w) {
+  node.style.gridColumn = `span ${Math.max(1, Math.min(4, w.cols || 2))}`;
+  if (w.kind !== 'label') node.style.gridRow = `span ${Math.max(1, w.rows || 2)}`;
 }
 
 // Format a number the 5e way when the value is flagged `signed`: +3 / +0 / −1.
@@ -1460,16 +1571,55 @@ function editInline(targetEl, v, kind = 'number') {
 }
 
 // --- edit-mode widget chrome ----------------------------------------------
+// Move handle sits centered over the card; a gear (top-right) opens config and a
+// resize icon (bottom-right) toggles drag-to-resize. Size lives on the card, not
+// in a menu.
 function decorateEdit(node, w, index, page) {
   node.classList.add('editing');
   node.classList.remove('num');
-  // replace any live input face with a static one in edit mode
-  const handle = el('div', { class: 'drag', text: '⠿', title: 'Drag to reorder' });
-  node.prepend(handle);
-  node.append(el('div', { class: 'editrow' }, [
-    el('button', { class: 'cfg', text: 'Edit', onclick: (e) => { e.stopPropagation(); openWidgetConfig(w, page); } }),
-  ]));
+  const resizing = state.resizing === w.id;
+  if (resizing) node.classList.add('resizing');
+
+  const handle = el('div', { class: 'drag center', text: '✥', title: 'Drag to move' });
+  node.append(handle);
   enableDragReorder(node, handle, index, page);
+
+  node.append(el('button', { class: 'wbtn cfg', text: '⚙', title: 'Configure', onclick: (e) => { e.stopPropagation(); openWidgetConfig(w, page); } }));
+
+  const rz = el('button', { class: `wbtn rz ${resizing ? 'on' : ''}`, text: '⤡', title: 'Resize', onclick: (e) => { e.stopPropagation(); state.resizing = resizing ? null : w.id; render(); } });
+  node.append(rz);
+  if (resizing) {
+    const grip = el('div', { class: 'resizegrip', title: 'Drag to resize' });
+    node.append(grip);
+    enableResize(node, grip, w);
+  }
+}
+
+// Drag the bottom-right grip to resize; spans snap to whole grid cells (4 cols
+// wide, a growable row unit tall). Live-preview via inline style, commit on drop.
+function enableResize(node, grip, w) {
+  grip.addEventListener('pointerdown', (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const grid = node.closest('.grid');
+    const gap = 10;
+    const colUnit = (grid.getBoundingClientRect().width - gap * 3) / 4 + gap; // colW + gap
+    const rowUnit = 40 + gap;                                                 // auto-row floor + gap
+    const rect = node.getBoundingClientRect();
+    let cols = w.cols || 2, rows = w.rows || 2;
+    const move = (ev) => {
+      cols = Math.max(1, Math.min(4, Math.round((ev.clientX - rect.left + gap) / colUnit)));
+      rows = Math.max(1, Math.min(16, Math.round((ev.clientY - rect.top + gap) / rowUnit)));
+      node.style.gridColumn = `span ${cols}`;
+      node.style.gridRow = `span ${rows}`;
+    };
+    const up = () => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      w.cols = cols; w.rows = rows; commit();
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
 }
 
 // --- pointer-based drag reorder (works on touch + mouse) -------------------
@@ -1836,40 +1986,126 @@ function deleteCharacter(id) {
 
 // ============================================================ NEW CHARACTER (C2)
 function openNewCharacter() {
-  let name = '';
-  let start = 'dnd5e';
+  state.overlay = {
+    render: () => sheetCard([
+      el('h2', { text: 'New character' }),
+      el('p', { class: 'desc', text: 'Guided 5e build, a ready-made 5e sheet, or an empty canvas.' }),
+      el('div', { class: 'menu-list startlist' }, [
+        el('button', { onclick: () => { closeOverlay(); openBuilder(); } }, [el('span', { class: 'mi', text: '✦' }), el('div', {}, [el('div', { class: 'opt-t', text: 'D&D 5e — guided builder' }), el('div', { class: 'opt-d', text: 'Pick class, level & ability scores. Fills the sheet for you.' })])]),
+        el('button', { onclick: () => quickCreate('dnd5e') }, [el('span', { class: 'mi', text: '●' }), el('div', {}, [el('div', { class: 'opt-t', text: 'D&D 5e — preset sheet' }), el('div', { class: 'opt-d', text: 'The full 5e layout with default scores. Edit anything after.' })])]),
+        el('button', { onclick: () => quickCreate('blank') }, [el('span', { class: 'mi', text: '○' }), el('div', {}, [el('div', { class: 'opt-t', text: 'Blank' }), el('div', { class: 'opt-d', text: 'An empty sheet with a single notes widget.' })])]),
+      ]),
+      el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay })]),
+    ]),
+  };
+  render();
+}
+
+function quickCreate(kind) {
+  const c = kind === 'dnd5e' ? dnd5eCharacter('New Hero') : blankCharacter('New Character');
+  state.save.characters.push(c);
+  state.save.activeCharacterId = c.id;
+  state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
+  commit();
+}
+
+// --- Guided 5e character builder -------------------------------------------
+const BUILD_CLASSES = [
+  { name: 'Barbarian', hd: 12, prime: ['str'] }, { name: 'Bard', hd: 8, prime: ['cha'] },
+  { name: 'Cleric', hd: 8, prime: ['wis'] }, { name: 'Druid', hd: 8, prime: ['wis'] },
+  { name: 'Fighter', hd: 10, prime: ['str', 'dex'] }, { name: 'Monk', hd: 8, prime: ['dex', 'wis'] },
+  { name: 'Paladin', hd: 10, prime: ['str', 'cha'] }, { name: 'Ranger', hd: 10, prime: ['dex', 'wis'] },
+  { name: 'Rogue', hd: 8, prime: ['dex'] }, { name: 'Sorcerer', hd: 6, prime: ['cha'] },
+  { name: 'Warlock', hd: 8, prime: ['cha'] }, { name: 'Wizard', hd: 6, prime: ['int'] },
+];
+const STD_ARRAY = [15, 14, 13, 12, 10, 8];
+// [shortKey (mod id prefix / scores key), label, full ability value id]
+const ABILITY_KEYS = [['str', 'STR', 'strength'], ['dex', 'DEX', 'dexterity'], ['con', 'CON', 'constitution'], ['int', 'INT', 'intelligence'], ['wis', 'WIS', 'wisdom'], ['cha', 'CHA', 'charisma']];
+function abilityMod(score) { return Math.floor((score - 10) / 2); }
+function hpFor(hd, conMod, level) {
+  const avg = Math.floor(hd / 2) + 1;                    // fixed average per level
+  return (hd + conMod) + (level - 1) * (avg + conMod);
+}
+function assignStdArray(scores, cls) {
+  const order = [...new Set([...cls.prime, 'con', 'dex', 'wis', 'str', 'int', 'cha'])];
+  STD_ARRAY.forEach((val, i) => { if (order[i]) scores[order[i]] = val; });
+}
+
+function openBuilder() {
+  const data = { name: '', cls: BUILD_CLASSES.find((c) => c.name === 'Fighter'), level: 1, scores: { str: 10, dex: 10, con: 10, int: 10, wis: 10, cha: 10 } };
+  const steps = ['Basics', 'Abilities', 'Review'];
+  let step = 0;
   state.overlay = {
     render() {
-      const create = () => {
-        const nm = name.trim() || (start === 'dnd5e' ? 'New Hero' : 'New Character');
-        const c = start === 'dnd5e' ? dnd5eCharacter(nm) : blankCharacter(nm);
-        state.save.characters.push(c);
-        state.save.activeCharacterId = c.id;
-        state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
-        commit();
-      };
-      const nameInput = el('input', { placeholder: 'e.g. Thordak', value: name, oninput: (e) => { name = e.target.value; } });
-      nameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); create(); } });
-      const pick = (val) => { start = val; render(); };
-      return sheetCard([
-        el('h2', { text: 'New character' }),
-        el('div', { class: 'field' }, [el('label', { text: 'Name' }), nameInput]),
-        el('div', { class: 'field' }, [
-          el('label', { text: 'Start from' }),
-          el('div', { class: 'seg' }, [
-            el('button', { class: start === 'dnd5e' ? 'on' : '', text: '● D&D 5e preset', onclick: () => pick('dnd5e') }),
-            el('button', { class: start === 'blank' ? 'on' : '', text: '○ Blank', onclick: () => pick('blank') }),
-          ]),
-          el('div', { class: 'hint', text: start === 'dnd5e' ? 'Full 5e sheet — abilities, saves, skills, attacks. Editable after.' : 'An empty sheet with a single notes widget.' }),
-        ]),
-        el('div', { class: 'btnrow' }, [
-          el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay }),
-          el('button', { class: 'btn primary', text: 'Create', onclick: create }),
-        ]),
-      ]);
+      const kids = [el('div', { class: 'wiz-steps' }, steps.map((s, i) => el('span', { class: `wiz-step ${i === step ? 'on' : ''} ${i < step ? 'done' : ''}`, text: `${i + 1}. ${s}` })))];
+
+      if (step === 0) {
+        const nameInput = el('input', { placeholder: 'e.g. Thordak', value: data.name, oninput: (e) => { data.name = e.target.value; } });
+        kids.push(el('h2', { text: 'Basics' }));
+        kids.push(field('Name', nameInput));
+        kids.push(el('div', { class: 'field' }, [
+          el('label', { text: 'Class' }),
+          el('div', { class: 'class-grid' }, BUILD_CLASSES.map((cl) => el('button', { class: data.cls.name === cl.name ? 'on' : '', text: cl.name, onclick: () => { data.cls = cl; render(); } }))),
+        ]));
+        kids.push(el('div', { class: 'field' }, [
+          el('label', { text: `Level — ${data.level}` }),
+          el('input', { type: 'range', min: 1, max: 20, value: data.level, oninput: (e) => { data.level = Number(e.target.value); render(); } }),
+        ]));
+        kids.push(el('div', { class: 'hint', text: `${data.cls.name}: d${data.cls.hd} hit die · key ability ${data.cls.prime.map((p) => p.toUpperCase()).join(' / ')}` }));
+      } else if (step === 1) {
+        kids.push(el('h2', { text: 'Ability scores' }));
+        kids.push(el('div', { class: 'btnrow', style: 'margin-bottom:10px' }, [
+          el('button', { class: 'btn ghost', text: 'Standard array', onclick: () => { assignStdArray(data.scores, data.cls); render(); } }),
+          el('button', { class: 'btn ghost', text: 'Reset to 10', onclick: () => { ABILITY_KEYS.forEach(([k]) => { data.scores[k] = 10; }); render(); } }),
+        ]));
+        ABILITY_KEYS.forEach(([k, lbl]) => {
+          const mod = abilityMod(data.scores[k]);
+          kids.push(el('div', { class: 'abrow' }, [
+            el('span', { class: 'ab-l', text: lbl }),
+            el('button', { class: 'step', text: '−', onclick: () => { data.scores[k] = Math.max(1, data.scores[k] - 1); render(); } }),
+            el('span', { class: 'ab-v', text: String(data.scores[k]) }),
+            el('button', { class: 'step', text: '+', onclick: () => { data.scores[k] = Math.min(30, data.scores[k] + 1); render(); } }),
+            el('span', { class: 'ab-m', text: signedStr(mod) }),
+          ]));
+        });
+        kids.push(el('div', { class: 'hint', text: 'Standard array is 15,14,13,12,10,8 (placed by class). Tune freely — you can change these any time.' }));
+      } else {
+        const conMod = abilityMod(data.scores.con);
+        const hp = hpFor(data.cls.hd, conMod, data.level);
+        kids.push(el('h2', { text: 'Review' }));
+        kids.push(el('div', { class: 'review' }, [
+          revRow('Name', data.name.trim() || 'New Hero'),
+          revRow('Class & level', `${data.cls.name} ${data.level}`),
+          revRow('Scores', ABILITY_KEYS.map(([k, l]) => `${l} ${data.scores[k]}`).join('  ·  ')),
+          revRow('Max HP', String(hp)),
+        ]));
+        kids.push(el('div', { class: 'hint', text: 'Creates a full 5e sheet with these values. Everything stays editable afterwards.' }));
+      }
+
+      const nav = [el('button', { class: 'btn ghost', text: step === 0 ? 'Cancel' : 'Back', onclick: () => { if (step === 0) closeOverlay(); else { step--; render(); } } })];
+      if (step < steps.length - 1) nav.push(el('button', { class: 'btn primary', text: 'Next', onclick: () => { step++; render(); } }));
+      else nav.push(el('button', { class: 'btn primary', text: 'Create character', onclick: () => createFromBuilder(data) }));
+      kids.push(el('div', { class: 'btnrow' }, nav));
+      return sheetCard(kids);
     },
   };
   render();
+}
+function revRow(k, v) { return el('div', { class: 'rev-row' }, [el('span', { class: 'rev-k', text: k }), el('span', { class: 'rev-v', text: v })]); }
+function createFromBuilder(data) {
+  const c = dnd5eCharacter(data.name.trim() || 'New Hero');
+  const set = (id, patch) => { const v = c.values.find((x) => x.id === id); if (v) Object.assign(v, patch); };
+  set('char_class', { text: data.cls.name });
+  set('level', { value: data.level });
+  ABILITY_KEYS.forEach(([k, , full]) => set(full, { value: data.scores[k] }));
+  const hp = hpFor(data.cls.hd, abilityMod(data.scores.con), data.level);
+  set('hp_max', { value: hp });
+  set('hp_current', { value: hp });
+  state.save.characters.push(c);
+  state.save.activeCharacterId = c.id;
+  state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
+  commit();
+  toast(`Created ${c.name} — level ${data.level} ${data.cls.name}.`);
 }
 
 // ================================================================ PAGES (edit)
@@ -1951,8 +2187,6 @@ function openWidgetConfig(w, page) {
     render() {
       const c = activeChar();
       const v = valueById(w.ref);
-      const size = w.cols >= 2 && w.rows >= 3 ? 'L' : w.cols >= 2 ? 'M' : 'S';
-      const setSize = (s) => { if (s === 'S') { w.cols = 1; w.rows = 1; } else if (s === 'M') { w.cols = 2; w.rows = 1; } else { w.cols = 2; w.rows = 3; } commit(); };
       const valueOptions = (sel, allowNone) => el('select', {
         onchange: (e) => sel(e.target.value || undefined),
       }, [
@@ -1978,21 +2212,23 @@ function openWidgetConfig(w, page) {
 
       return sheetCard([
         el('h2', { text: 'Configure widget' }),
-        el('p', { class: 'desc', text: v ? `Display face follows the bound value's kind (${v.kind}).` : 'Bind this widget to a value.' }),
+        el('p', { class: 'desc', text: v ? `Tap this card in play mode to open its details. Resize it with the ⤡ handle on the card.` : 'Bind this widget to a value.' }),
         el('div', { class: 'field' }, [el('label', { text: 'Bound value (ref)' }), refSel]),
         el('div', { class: 'field' }, [el('label', { text: 'Secondary value (optional)' }), secSel]),
-        el('div', { class: 'field' }, [
-          el('label', { text: 'Size' }),
-          el('div', { class: 'seg small' }, ['S', 'M', 'L'].map((s) => el('button', { class: size === s ? 'on' : '', text: s, onclick: () => setSize(s) }))),
+        el('div', { class: 'toggle-row', style: 'margin-top:2px' }, [
+          el('div', {}, [
+            el('div', { class: 'theme-nm', text: 'Editable in play mode' }),
+            el('div', { class: 'desc', style: 'margin:0', text: 'Adjust this value directly on the sheet (e.g. HP −/+, notes). Off = read-only, tap for details.' }),
+          ]),
+          el('button', {
+            class: `switch ${w.editableInPlay ? 'on' : ''}`, role: 'switch', 'aria-checked': String(!!w.editableInPlay),
+            onclick: () => { w.editableInPlay = !w.editableInPlay; commit(); },
+          }, el('span', { class: 'knob' })),
         ]),
-        el('div', { class: 'field' }, [
-          el('label', { text: 'Tap action' }),
-          el('div', { class: 'seg small' }, ['none', 'detail', 'roll'].map((t) => el('button', { class: (w.tap || 'none') === t ? 'on' : '', text: t, onclick: () => { w.tap = t; commit(); } }))),
-        ]),
-        el('div', { class: 'field' }, [
-          el('label', { text: 'Roll override (else uses value.roll)' }),
+        el('div', { class: 'field', style: 'margin-top:14px' }, [
+          el('label', { text: 'Roll override (else uses value’s own roll)' }),
           el('input', { placeholder: v?.roll ? `inherits: ${v.roll}` : 'e.g. 1d20 + str_mod', value: w.rollOverride || '', oninput: (e) => { w.rollOverride = e.target.value || undefined; store.save(state.save); } }),
-          el('div', { class: 'hint', text: 'rollOverride wins; otherwise the bound value’s own roll is used.' }),
+          el('div', { class: 'hint', text: 'Adds a roll button in this card’s details. The value’s own rolls also appear.' }),
         ]),
         el('div', { class: 'btnrow' }, [
           el('button', { class: 'btn ghost', text: '⧉ Duplicate', onclick: () => duplicateWidget(w, page) }),
@@ -2238,7 +2474,29 @@ function openPackImport(c, pack) {
   render();
 }
 
+// --- one-time layout migration ---------------------------------------------
+// v1 used a 2-column grid (cols 1|2, rows 1..3) with a per-widget `tap` enum.
+// v2 uses a 4-column fine grid (cols 1–4, rows are a growable floor) and a
+// per-widget `editableInPlay` flag; all taps open Details. Scale old layouts
+// ×2 and translate `tap:'none'` (directly-editable faces) → editableInPlay.
+function migrateSave(save) {
+  if (save.layoutScale === 4) return;
+  for (const c of save.characters || []) {
+    for (const p of c.pages || []) {
+      for (const w of p.widgets || []) {
+        w.cols = Math.max(1, Math.min(4, (w.cols || 1) * 2));
+        w.rows = Math.max(1, (w.rows || 1) * 2);
+        if (w.kind === 'bound') w.editableInPlay = (w.tap === undefined || w.tap === 'none');
+        delete w.tap;
+      }
+    }
+  }
+  save.layoutScale = 4;
+}
+
 // --- boot ------------------------------------------------------------------
+migrateSave(state.save);
+store.saveNow(state.save);
 applyTheme(state.theme);
 if (new URLSearchParams(location.search).get('sheet') && state.save.activeCharacterId) state.view = 'sheet';
 render();
