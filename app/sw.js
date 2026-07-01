@@ -1,6 +1,6 @@
 // Service worker — caches the app shell for full offline use (SPEC §11).
 // Bump CACHE when any shell file changes to invalidate the old cache.
-const CACHE = 'parchment-v1';
+const CACHE = 'parchment-v2';
 const SHELL = [
   './',
   './index.html',
@@ -11,6 +11,12 @@ const SHELL = [
   './store.js',
   './manifest.webmanifest',
   './icon.svg',
+  './icon-maskable.svg',
+  './favicon-32.png',
+  './icon-192.png',
+  './icon-512.png',
+  './icon-maskable-512.png',
+  './apple-touch-icon.png',
 ];
 
 self.addEventListener('install', (e) => {

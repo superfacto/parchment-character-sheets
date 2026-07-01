@@ -1,14 +1,19 @@
 {
   "name": "Parchment — Character Sheets",
   "short_name": "Parchment",
-  "description": "Build and use tabletop-RPG character sheets. Offline, no accounts.",
+  "description": "Build and use tabletop-RPG character sheets. Generic value/formula/dice engine + editable D&D 5e preset. Offline, no accounts.",
   "start_url": "./index.html",
   "scope": "./",
+  "id": "/",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#efe9dd",
   "theme_color": "#7a2b2b",
+  "categories": ["games", "utilities", "productivity"],
   "icons": [
-    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+    { "src": "./icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "./icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
   ]
 }

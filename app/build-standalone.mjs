@@ -40,6 +40,8 @@ const js = [
 ].join('\n');
 
 const css = read('styles.css');
+// Inline the favicon as a data URI so the single file stays fully self-contained.
+const iconDataUri = `data:image/svg+xml;base64,${Buffer.from(read('icon.svg')).toString('base64')}`;
 
 const html = `<!DOCTYPE html>
 <html lang="en">
@@ -47,6 +49,8 @@ const html = `<!DOCTYPE html>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
   <meta name="theme-color" content="#7a2b2b" />
+  <meta name="description" content="Build and use tabletop-RPG character sheets. Offline, no accounts, no tracking." />
+  <link rel="icon" href="${iconDataUri}" />
   <title>Parchment (offline / single file)</title>
   <style>
 ${css}
