@@ -1,0 +1,14 @@
+{
+  "name": "Parchment — Character Sheets",
+  "short_name": "Parchment",
+  "description": "Build and use tabletop-RPG character sheets. Offline, no accounts.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#efe9dd",
+  "theme_color": "#7a2b2b",
+  "icons": [
+    { "src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

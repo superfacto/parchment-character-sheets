@@ -1,0 +1,1695 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no" />
+  <meta name="theme-color" content="#7a2b2b" />
+  <title>Parchment (offline / single file)</title>
+  <style>
+/* Parchment — aged paper + ink + a single oxblood accent (SPEC §8.3).
+   Bold in one place, quiet everywhere else. System font stack, no CDN. */
+:root {
+  --ink: #2a2622;
+  --paper: #efe9dd;
+  --card: #fdfcfa;
+  --line: #c9c0b0;
+  --muted: #8a8377;
+  --oxblood: #7a2b2b;
+  --radius: 9px;
+  --gap: 10px;
+  --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: var(--font);
+  color: var(--ink);
+  background: #d9d2c4;
+  overscroll-behavior: none;
+}
+button {
+  font-family: inherit; color: inherit; cursor: pointer;
+  touch-action: manipulation;            /* kill the 300ms tap delay / double-tap zoom */
+  -webkit-user-select: none; user-select: none;  /* no text/emoji selection on long-press */
+  -webkit-touch-callout: none;           /* no iOS long-press callout menu */
+}
+/* Tappable non-button elements get the same fast-tap behaviour. */
+.wdg.tappable, .charrow, .tab { touch-action: manipulation; }
+input, textarea, select { font-family: inherit; font-size: 16px; }
+
+#app { height: 100%; }
+
+/* Phone frame — on wide screens, show a centered device; on a phone, fill. */
+.frame {
+  position: relative;
+  max-width: 460px;
+  margin: 0 auto;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  background-image:
+    radial-gradient(120% 120% at 50% 0%, rgba(255,255,255,0.5), transparent 60%);
+  box-shadow: 0 10px 40px rgba(0,0,0,0.25);
+  overflow: hidden;
+}
+@media (min-width: 480px) {
+  body { padding: 18px 0; }
+  #app { height: calc(100% - 36px); }
+  .frame { border-radius: 30px; border: 1px solid var(--line); }
+}
+
+/* Faint graph-paper grid: only in edit mode, fades in play mode (§8.3). */
+.sheet {
+  position: relative;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: var(--gap);
+  scroll-behavior: smooth;
+}
+.sheet::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(var(--line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line) 1px, transparent 1px);
+  background-size: 22px 22px;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+.frame.edit .sheet::before { opacity: 0.35; }
+
+/* App bar */
+.appbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px calc(12px + env(safe-area-inset-top)) 14px;
+  padding-top: max(12px, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(var(--paper), rgba(239,233,221,0.85));
+  backdrop-filter: blur(6px);
+}
+.appbar .name { flex: 1; font-weight: 650; font-size: 18px; letter-spacing: 0.2px; }
+.appbar .name .sub { display: block; font-weight: 400; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+.iconbtn {
+  border: 1px solid var(--line); background: var(--card);
+  width: 44px; height: 44px; border-radius: var(--radius);
+  font-size: 18px; display: grid; place-items: center; padding: 0;
+}
+.iconbtn:active { transform: scale(0.94); }
+
+/* Play/Edit toggle */
+.toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 999px; background: var(--card); overflow: hidden; }
+.toggle button { border: 0; background: transparent; padding: 0 16px; min-height: 44px; font-size: 14px; font-weight: 600; color: var(--muted); }
+.toggle button.on { background: var(--oxblood); color: #fff; }
+
+/* Page tabs + dots */
+.pagebar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.tab { flex: none; display: inline-flex; align-items: center; min-height: 44px; border: 1px solid var(--line); background: var(--card); padding: 0 16px; border-radius: 999px; font-size: 14px; color: var(--muted); }
+.tab.on { color: var(--ink); border-color: var(--ink); font-weight: 600; }
+.tab.add { color: var(--oxblood); border-style: dashed; }
+.dots { display: flex; gap: 6px; justify-content: center; padding: 8px 0 4px; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.dot.on { background: var(--oxblood); }
+
+/* Widget grid — responsive 2-col stack (§8.1) */
+.grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: var(--gap); align-content: start; }
+.wdg {
+  position: relative;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  min-height: 64px;
+  padding: 10px 12px;
+  display: flex; flex-direction: column; justify-content: center;
+  box-shadow: 0 1px 0 rgba(0,0,0,0.03);
+}
+.wdg.tappable { cursor: pointer; }
+.wdg.tappable:active { transform: scale(0.985); }
+.wdg .wl { font-size: 11px; text-transform: uppercase; letter-spacing: 0.8px; color: var(--muted); }
+.wdg .wv { font-size: 30px; font-weight: 650; line-height: 1.05; margin-top: 2px; }
+.wdg .wv.text { font-size: 18px; font-weight: 550; }
+.wdg .ws { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.wdg .marker { position: absolute; top: 8px; right: 10px; font-size: 13px; color: var(--oxblood); }
+.wdg .wv.err { color: var(--oxblood); font-size: 20px; }
+.wdg.num input {
+  width: 100%; border: 0; background: transparent; font-size: 30px; font-weight: 650;
+  color: var(--ink); padding: 0; margin-top: 2px; -moz-appearance: textfield;
+}
+.wdg.num input:focus { outline: none; border-bottom: 2px solid var(--oxblood); }
+.wdg .editnum { position: absolute; bottom: 6px; right: 8px; border: 1px solid var(--line); background: var(--paper); border-radius: 6px; font-size: 13px; line-height: 1; padding: 6px 9px; color: var(--muted); }
+.wdg .editnum:active { transform: scale(0.92); }
+.wdg input.inlinenum { width: 100%; border: 0; border-bottom: 2px solid var(--oxblood); background: transparent; font-size: 30px; font-weight: 650; color: var(--ink); padding: 0; margin-top: 2px; -moz-appearance: textfield; }
+.wdg input.inlinenum:focus { outline: none; }
+.wdg textarea { width: 100%; border: 0; background: transparent; resize: none; color: var(--ink); font-size: 15px; }
+.wdg textarea:focus { outline: none; }
+.wdg.label { background: transparent; border: 0; box-shadow: none; min-height: 0; padding: 12px 4px 2px; justify-content: end; }
+.wdg.label .lbl { font-size: 12px; text-transform: uppercase; letter-spacing: 1.5px; color: var(--oxblood); font-weight: 700; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+
+/* span helpers */
+.c2 { grid-column: span 2; }
+.r2 { grid-row: span 2; }
+.r3 { grid-row: span 3; }
+
+/* Edit-mode widget chrome — index cards */
+.frame.edit .wdg { border-style: dashed; }
+.wdg .drag { position: absolute; top: 2px; left: 2px; color: var(--muted); font-size: 15px; cursor: grab; padding: 6px 9px; touch-action: none; }
+.wdg .editrow { position: absolute; bottom: 6px; right: 8px; display: flex; gap: 6px; align-items: center; }
+.szchip { border: 1px solid var(--line); background: var(--paper); border-radius: 6px; font-size: 10px; font-weight: 700; padding: 1px 5px; color: var(--muted); }
+.wdg .cfg { border: 1px solid var(--line); background: var(--paper); border-radius: 6px; font-size: 13px; padding: 7px 11px; min-height: 34px; }
+.wdg .cfg:active { transform: scale(0.94); }
+/* Invisible hit-area expanders so the small corner affordances hit ~44px on touch. */
+.wdg .editnum::after, .wdg .drag::after, .wdg .cfg::after { content: ""; position: absolute; inset: -10px; }
+.wdg .cfg { position: relative; }
+.wdg.editing { padding-top: 22px; }
+.wdg.dragging { opacity: 0.4; }
+.wdg.dragover { outline: 2px solid var(--oxblood); outline-offset: 1px; }
+.addtile {
+  grid-column: span 2; border: 1.5px dashed var(--oxblood); background: transparent;
+  border-radius: var(--radius); color: var(--oxblood); font-weight: 600; padding: 14px; font-size: 14px;
+}
+
+/* FAB */
+.fab {
+  position: absolute; right: 16px; bottom: 16px; z-index: 5;
+  border: 0; background: var(--oxblood); color: #fff; border-radius: 999px;
+  padding: 14px 18px; font-weight: 650; font-size: 14px; box-shadow: 0 6px 18px rgba(122,43,43,0.4);
+}
+
+/* Overlays / bottom sheets */
+.scrim { position: fixed; inset: 0; background: rgba(30,26,22,0.5); display: grid; place-items: end center; z-index: 20; animation: fade 0.15s ease; }
+.scrim.center { place-items: center; }
+@keyframes fade { from { opacity: 0; } }
+.sheetcard {
+  width: 100%; max-width: 460px; background: var(--paper);
+  border-radius: 18px 18px 0 0; padding: 18px 18px calc(18px + env(safe-area-inset-bottom));
+  box-shadow: 0 -8px 40px rgba(0,0,0,0.3); animation: rise 0.2s ease;
+  max-height: 88%; overflow-y: auto;
+}
+.scrim.center .sheetcard { border-radius: 18px; margin: 16px; }
+@keyframes rise { from { transform: translateY(30px); } }
+.sheetcard h2 { margin: 0 0 4px; font-size: 18px; }
+.sheetcard h2 + .desc { color: var(--muted); font-size: 13px; margin: 0 0 14px; }
+
+/* Roll result */
+.rollbig { font-size: 52px; font-weight: 700; text-align: center; color: var(--oxblood); margin: 8px 0; }
+.rollbreak { font-family: var(--mono); text-align: center; font-size: 15px; color: var(--ink); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; }
+.rollbreak .op { color: var(--muted); }
+
+/* Detail overlay */
+.formula { font-family: var(--mono); background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; font-size: 15px; }
+.formula .err { color: var(--oxblood); }
+
+/* Forms */
+.field { margin-bottom: 14px; }
+.field label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.6px; color: var(--muted); margin-bottom: 5px; }
+.field input, .field select, .field textarea {
+  width: 100%; min-height: 44px; padding: 11px 12px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--card); color: var(--ink);
+}
+.field input:focus, .field select:focus, .field textarea:focus { outline: none; border-color: var(--oxblood); }
+.field input.locked { background: #efeae0; color: var(--muted); font-family: var(--mono); }
+.field .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+.field .hint.err { color: var(--oxblood); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.seg button { flex: 1; border: 0; background: var(--card); min-height: 44px; padding: 8px; font-size: 14px; color: var(--muted); }
+.seg button.on { background: var(--oxblood); color: #fff; font-weight: 600; }
+.seg.small button { min-height: 42px; padding: 6px; font-size: 12px; }
+
+.btnrow { display: flex; gap: 10px; margin-top: 8px; }
+.btn { flex: 1; min-height: 48px; border: 1px solid var(--line); background: var(--card); border-radius: var(--radius); padding: 12px; font-weight: 600; font-size: 15px; }
+.btn:active { transform: scale(0.98); }
+.btn.primary { background: var(--oxblood); color: #fff; border-color: var(--oxblood); }
+.btn.ghost { background: transparent; }
+.btn.danger { color: var(--oxblood); }
+.btn.destruct { background: var(--oxblood); color: #fff; border-color: var(--oxblood); }
+
+/* Character list (home) */
+.home { padding: 14px; overflow-y: auto; flex: 1; }
+.home h1 { font-size: 22px; margin: 6px 4px 2px; }
+.home .tagline { color: var(--muted); font-size: 13px; margin: 0 4px 16px; }
+.warnbanner { background: #f6ecda; border: 1px solid #d8c48f; color: #7a5a1e; border-radius: var(--radius); padding: 10px 12px; font-size: 12px; margin-bottom: 14px; display: flex; gap: 8px; }
+.charrow { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; margin-bottom: 10px; }
+.charrow.active { border-color: var(--oxblood); }
+.charrow .activedot { width: 9px; height: 9px; border-radius: 50%; background: var(--line); flex: none; }
+.charrow.active .activedot { background: var(--oxblood); }
+.charrow .cmeta { flex: 1; }
+.charrow .cname { font-weight: 650; font-size: 16px; }
+.charrow .csub { color: var(--muted); font-size: 12px; margin-top: 2px; }
+.charrow .cgo { color: var(--muted); font-size: 18px; }
+.charrow .rowdel { flex: none; width: 44px; height: 44px; border: 1px solid var(--line); background: var(--paper); border-radius: 8px; font-size: 16px; color: var(--muted); display: grid; place-items: center; padding: 0; }
+.charrow .rowdel:active { transform: scale(0.92); }
+
+.menu-list { display: flex; flex-direction: column; }
+.menu-list button { text-align: left; border: 0; border-bottom: 1px solid var(--line); background: transparent; padding: 14px 4px; font-size: 15px; display: flex; gap: 12px; align-items: center; }
+.menu-list button:last-child { border-bottom: 0; }
+.menu-list .mi { width: 22px; text-align: center; }
+
+.pill { display: inline-block; font-size: 10px; text-transform: uppercase; letter-spacing: 0.6px; background: var(--paper); border: 1px solid var(--line); border-radius: 999px; padding: 2px 8px; color: var(--muted); }
+
+.empty { text-align: center; color: var(--muted); padding: 40px 20px; }
+.toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--paper); padding: 10px 16px; border-radius: 999px; font-size: 13px; z-index: 50; animation: fade 0.2s ease; }
+
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+  <input id="file-input" type="file" accept="application/json,.json" hidden />
+  <script>
+(function(){
+"use strict";
+// ===== engine.js =====
+// Parchment engine — the two-context math kernel (SPEC §6).
+// Tokenizer -> shunting-yard -> RPN evaluator. No eval(), ever.
+//
+// Two contexts share one grammar; the roll context adds the NdM dice primitive.
+// Calc formulas MUST NOT contain dice (that would let randomness into the
+// deterministic dependency graph). The tokenizer flags dice tokens; the calc
+// path rejects them at parse time.
+
+class FormulaError extends Error {}
+
+const FUNCTIONS = {
+  floor: { arity: 1, fn: (a) => Math.floor(a) },
+  ceil:  { arity: 1, fn: (a) => Math.ceil(a) },
+  round: { arity: 1, fn: (a) => Math.round(a) },
+  abs:   { arity: 1, fn: (a) => Math.abs(a) },
+  sign:  { arity: 1, fn: (a) => Math.sign(a) },
+  min:   { arity: 'var', fn: (...xs) => Math.min(...xs) },
+  max:   { arity: 'var', fn: (...xs) => Math.max(...xs) },
+  clamp: { arity: 3, fn: (x, lo, hi) => Math.min(Math.max(x, lo), hi) },
+};
+
+const OPS = {
+  '+': { prec: 2, assoc: 'L', fn: (a, b) => a + b },
+  '-': { prec: 2, assoc: 'L', fn: (a, b) => a - b },
+  '*': { prec: 3, assoc: 'L', fn: (a, b) => a * b },
+  '/': { prec: 3, assoc: 'L', fn: (a, b) => (b === 0 ? 0 : a / b) },
+  '%': { prec: 3, assoc: 'L', fn: (a, b) => (b === 0 ? 0 : a % b) },
+};
+
+// --- Tokenizer -------------------------------------------------------------
+// Token kinds: number, ref, func, op, lparen, rparen, comma, dice, uminus
+function tokenize(src, { allowDice } = { allowDice: false }) {
+  const tokens = [];
+  let i = 0;
+  const s = src;
+  const isDigit = (c) => c >= '0' && c <= '9';
+  const isIdentStart = (c) => /[a-z]/i.test(c) || c === '_';
+  const isIdentPart = (c) => /[a-z0-9_]/i.test(c);
+
+  while (i < s.length) {
+    const c = s[i];
+    if (c === ' ' || c === '\t' || c === '\n' || c === '\r') { i++; continue; }
+
+    if (isDigit(c) || (c === '.' && isDigit(s[i + 1]))) {
+      let j = i;
+      while (j < s.length && (isDigit(s[j]) || s[j] === '.')) j++;
+      // A leading integer may be a dice literal: NdM(kh|kl)K
+      if (allowDice && s[j] === 'd' && isDigit(s[j + 1])) {
+        let k = j + 1;
+        while (k < s.length && isDigit(s[k])) k++;
+        let keep = null;
+        if (s[k] === 'k' && (s[k + 1] === 'h' || s[k + 1] === 'l')) {
+          const kind = s[k + 1] === 'h' ? 'kh' : 'kl';
+          let m = k + 2;
+          while (m < s.length && isDigit(s[m])) m++;
+          keep = { kind, n: parseInt(s.slice(k + 2, m) || '1', 10) };
+          k = m;
+        }
+        const count = parseInt(s.slice(i, j), 10);
+        const sides = parseInt(s.slice(j + 1, keep ? s.indexOf('k', j) : k), 10);
+        tokens.push({ type: 'dice', text: s.slice(i, k), count, sides, keep });
+        i = k;
+        continue;
+      }
+      const text = s.slice(i, j);
+      if (text.split('.').length > 2) throw new FormulaError(`Bad number "${text}"`);
+      tokens.push({ type: 'number', value: parseFloat(text), text });
+      i = j;
+      continue;
+    }
+
+    if (isIdentStart(c)) {
+      let j = i;
+      while (j < s.length && isIdentPart(s[j])) j++;
+      const word = s.slice(i, j);
+      // A "d" glued to digits was handled above; a bare identifier like "d20"
+      // is just a ref. Functions are recognised by a following '('.
+      if (FUNCTIONS[word] && s[j] === '(') {
+        tokens.push({ type: 'func', name: word });
+      } else {
+        tokens.push({ type: 'ref', name: word, text: word });
+      }
+      i = j;
+      continue;
+    }
+
+    if (c === '(') { tokens.push({ type: 'lparen' }); i++; continue; }
+    if (c === ')') { tokens.push({ type: 'rparen' }); i++; continue; }
+    if (c === ',') { tokens.push({ type: 'comma' }); i++; continue; }
+
+    if (OPS[c]) {
+      // Unary minus: '-' at start, or after an operator / '(' / ','.
+      const prev = tokens[tokens.length - 1];
+      const unary = c === '-' && (!prev || prev.type === 'op' || prev.type === 'uminus' ||
+        prev.type === 'lparen' || prev.type === 'comma' || prev.type === 'func');
+      tokens.push(unary ? { type: 'uminus' } : { type: 'op', op: c });
+      i++;
+      continue;
+    }
+
+    throw new FormulaError(`Unexpected character "${c}"`);
+  }
+  return tokens;
+}
+
+// --- Shunting-yard: tokens -> RPN -----------------------------------------
+function toRPN(tokens) {
+  const out = [];
+  const stack = [];
+  const argc = []; // argument counters for functions
+
+  for (const t of tokens) {
+    switch (t.type) {
+      case 'number':
+      case 'ref':
+      case 'dice':
+        out.push(t);
+        break;
+      case 'func':
+        stack.push(t);
+        argc.push(1);
+        break;
+      case 'comma':
+        while (stack.length && stack[stack.length - 1].type !== 'lparen') out.push(stack.pop());
+        if (!stack.length) throw new FormulaError('Misplaced comma');
+        argc[argc.length - 1]++;
+        break;
+      case 'uminus':
+        stack.push(t); // treated like a right-assoc high-prec unary op
+        break;
+      case 'op': {
+        const o1 = OPS[t.op];
+        while (stack.length) {
+          const top = stack[stack.length - 1];
+          if (top.type === 'uminus') { out.push(stack.pop()); continue; }
+          if (top.type === 'op') {
+            const o2 = OPS[top.op];
+            if (o2.prec > o1.prec || (o2.prec === o1.prec && o1.assoc === 'L')) {
+              out.push(stack.pop());
+              continue;
+            }
+          }
+          break;
+        }
+        stack.push(t);
+        break;
+      }
+      case 'lparen':
+        stack.push(t);
+        break;
+      case 'rparen': {
+        while (stack.length && stack[stack.length - 1].type !== 'lparen') out.push(stack.pop());
+        if (!stack.length) throw new FormulaError('Mismatched parenthesis');
+        stack.pop(); // discard lparen
+        if (stack.length && stack[stack.length - 1].type === 'func') {
+          const fn = stack.pop();
+          fn.nargs = argc.pop();
+          out.push(fn);
+        }
+        break;
+      }
+      default:
+        throw new FormulaError(`Unknown token ${t.type}`);
+    }
+  }
+  while (stack.length) {
+    const top = stack.pop();
+    if (top.type === 'lparen' || top.type === 'rparen') throw new FormulaError('Mismatched parenthesis');
+    out.push(top);
+  }
+  return out;
+}
+
+// --- RPN evaluator ---------------------------------------------------------
+// resolve(name) -> number, or throws FormulaError for unknown refs.
+// rollDice(token) -> { value, rolls } used only in the roll context.
+function evalRPN(rpn, { resolve, rollDice, onLeaf }) {
+  const st = [];
+  for (const t of rpn) {
+    switch (t.type) {
+      case 'number':
+        st.push(t.value);
+        break;
+      case 'ref': {
+        const v = resolve(t.name);
+        if (onLeaf) onLeaf({ label: t.name, value: v });
+        st.push(v);
+        break;
+      }
+      case 'dice': {
+        if (!rollDice) throw new FormulaError('Dice not allowed here');
+        const { value, rolls } = rollDice(t);
+        if (onLeaf) onLeaf({ label: t.text, rolls, value });
+        st.push(value);
+        break;
+      }
+      case 'uminus':
+        if (st.length < 1) throw new FormulaError('Bad expression');
+        st.push(-st.pop());
+        break;
+      case 'op': {
+        if (st.length < 2) throw new FormulaError('Bad expression');
+        const b = st.pop(); const a = st.pop();
+        st.push(OPS[t.op].fn(a, b));
+        break;
+      }
+      case 'func': {
+        const spec = FUNCTIONS[t.name];
+        const n = spec.arity === 'var' ? t.nargs : spec.arity;
+        if (spec.arity !== 'var' && t.nargs !== spec.arity)
+          throw new FormulaError(`${t.name}() expects ${spec.arity} args`);
+        if (st.length < n) throw new FormulaError('Bad expression');
+        const args = st.splice(st.length - n, n);
+        st.push(spec.fn(...args));
+        break;
+      }
+      default:
+        throw new FormulaError(`Cannot evaluate ${t.type}`);
+    }
+  }
+  if (st.length !== 1) throw new FormulaError('Bad expression');
+  return st[0];
+}
+
+function rollDice(t, rng = Math.random) {
+  const rolls = [];
+  for (let k = 0; k < t.count; k++) rolls.push(1 + Math.floor(rng() * t.sides));
+  let kept = rolls;
+  if (t.keep) {
+    const sorted = [...rolls].sort((a, b) => a - b);
+    kept = t.keep.kind === 'kh' ? sorted.slice(sorted.length - t.keep.n) : sorted.slice(0, t.keep.n);
+  }
+  return { value: kept.reduce((a, b) => a + b, 0), rolls };
+}
+
+// Extract the value-id refs a formula depends on (for the dependency graph).
+function refsOf(formula) {
+  const tokens = tokenize(formula, { allowDice: false });
+  const set = new Set();
+  for (const t of tokens) if (t.type === 'ref') set.add(t.name);
+  return [...set];
+}
+
+// Compile a calc formula. Throws FormulaError (incl. on any dice token).
+function compileCalc(formula) {
+  // Tokenize WITH dice recognition so an NdM literal is caught and rejected —
+  // the grammar wall (SPEC §6) forbids randomness in the deterministic graph.
+  if (tokenize(formula, { allowDice: true }).some((t) => t.type === 'dice'))
+    throw new FormulaError('Dice not allowed in a formula');
+  return toRPN(tokenize(formula, { allowDice: false }));
+}
+
+// Evaluate a calc RPN. resolve(name) supplies dependency values.
+function evalCalc(rpn, resolve) {
+  return evalRPN(rpn, { resolve });
+}
+
+// Evaluate a roll expression -> structured breakdown (SPEC §6.4).
+function evalRoll(expr, resolve, rng = Math.random) {
+  const rpn = toRPN(tokenize(expr, { allowDice: true }));
+  const parts = [];
+  const total = evalRPN(rpn, {
+    resolve,
+    rollDice: (t) => rollDice(t, rng),
+    onLeaf: (p) => parts.push(p),
+  });
+  return { total, parts, display: renderRoll(parts, total) };
+}
+
+function renderRoll(parts, total) {
+  const segs = parts.map((p) =>
+    p.rolls ? `${p.label} (${p.rolls.join('+')})` : `${p.label} (${p.value})`
+  );
+  return `${segs.join(' + ')} = ${total}`;
+}
+
+// --- Character graph: compute all calc values (topo sort + cycle detect) ---
+// values: array of Value objects. Returns Map(id -> number|string|'ERR')
+// plus a details map for tap-detail (formula / error message).
+function computeAll(values) {
+  const byId = new Map(values.map((v) => [v.id, v]));
+  const results = new Map();
+  const details = new Map(); // id -> { formula?, error? , breakdown? }
+  const compiled = new Map();
+
+  // Seed literal (number/text) values.
+  for (const v of values) {
+    if (v.kind === 'number') results.set(v.id, typeof v.value === 'number' ? v.value : 0);
+    else if (v.kind === 'text') results.set(v.id, v.text ?? '');
+  }
+
+  // Precompile calc formulas; a parse error is a per-value ERR.
+  const deps = new Map();
+  for (const v of values) {
+    if (v.kind !== 'calc') continue;
+    try {
+      compiled.set(v.id, compileCalc(v.formula || ''));
+      deps.set(v.id, refsOf(v.formula || ''));
+    } catch (e) {
+      results.set(v.id, 'ERR');
+      details.set(v.id, { error: e.message });
+    }
+  }
+
+  // Cycle detection via DFS colouring, over calc nodes only.
+  const state = new Map(); // white(undef)/gray(1)/black(2)
+  const inCycle = new Set();
+  function visit(id, stack) {
+    if (state.get(id) === 2) return;
+    if (state.get(id) === 1) {
+      // Found a back-edge: everything from the first occurrence is a cycle.
+      const from = stack.indexOf(id);
+      for (const n of stack.slice(from)) inCycle.add(n);
+      return;
+    }
+    if (!byId.get(id) || byId.get(id).kind !== 'calc') return; // leaf ref
+    if (!compiled.has(id)) return; // parse-errored node
+    state.set(id, 1);
+    stack.push(id);
+    for (const d of deps.get(id) || []) visit(d, stack);
+    stack.pop();
+    state.set(id, 2);
+  }
+  for (const id of compiled.keys()) if (!state.has(id)) visit(id, []);
+
+  for (const id of inCycle) {
+    results.set(id, 'ERR');
+    details.set(id, { error: `Cycle: ${id} depends on itself` });
+  }
+
+  // Evaluate remaining calc nodes in dependency order (memoised recursion).
+  function evalNode(id) {
+    if (results.has(id)) return results.get(id);
+    const v = byId.get(id);
+    if (!v) { results.set(id, 'ERR'); details.set(id, { error: `Unknown value "${id}"` }); return 'ERR'; }
+    if (v.kind !== 'calc') { const r = results.get(id) ?? 0; return r; }
+    if (!compiled.has(id)) return 'ERR';
+    try {
+      const val = evalCalc(compiled.get(id), (name) => {
+        const r = evalNode(name);
+        if (r === 'ERR' || typeof r !== 'number') throw new FormulaError(`Bad ref "${name}"`);
+        return r;
+      });
+      results.set(id, val);
+      details.set(id, { formula: v.formula });
+      return val;
+    } catch (e) {
+      results.set(id, 'ERR');
+      details.set(id, { error: e.message });
+      return 'ERR';
+    }
+  }
+  for (const id of compiled.keys()) if (!inCycle.has(id)) evalNode(id);
+
+  return { results, details };
+}
+
+const _internal = { rollDice, evalRPN };
+
+// ===== preset.js =====
+// The shipped D&D 5e preset (SPEC §10). Fully editable after creation.
+// v1: saves/skills are raw ability mods (no proficiency toggle yet).
+
+const ABILITIES = [
+  ['strength', 'Strength', 'str'],
+  ['dexterity', 'Dexterity', 'dex'],
+  ['constitution', 'Constitution', 'con'],
+  ['intelligence', 'Intelligence', 'int'],
+  ['wisdom', 'Wisdom', 'wis'],
+  ['charisma', 'Charisma', 'cha'],
+];
+
+const SKILLS = [
+  ['athletics', 'Athletics', 'str'],
+  ['acrobatics', 'Acrobatics', 'dex'],
+  ['stealth', 'Stealth', 'dex'],
+  ['perception', 'Perception', 'wis'],
+  ['investigation', 'Investigation', 'int'],
+  ['persuasion', 'Persuasion', 'cha'],
+];
+
+let n = 0;
+const uid = (p) => `${p}_${(Date.now().toString(36))}${(n++).toString(36)}`;
+
+function newId(prefix = 'id') {
+  return `${prefix}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function dnd5eCharacter(name = 'New Hero') {
+  const values = [];
+
+  values.push({ id: 'char_class', label: 'Class', kind: 'text', text: 'Fighter', group: 'Bio' });
+  values.push({ id: 'level', label: 'Level', kind: 'number', value: 1, group: 'Bio' });
+  values.push({ id: 'proficiency_bonus', label: 'Prof', kind: 'calc', formula: '2 + floor((level - 1) / 4)', group: 'Bio' });
+
+  for (const [id, label] of ABILITIES) {
+    values.push({ id, label, kind: 'number', value: 10, group: 'Abilities' });
+  }
+  for (const [id, label, ab] of ABILITIES.map((a) => [`${a[2]}_mod`, `${a[2].toUpperCase()} Mod`, a[0]])) {
+    values.push({ id, label, kind: 'calc', formula: `floor((${ab} - 10) / 2)`, group: 'Abilities' });
+  }
+
+  values.push({ id: 'armor_class', label: 'AC', kind: 'calc', formula: '10 + dex_mod', group: 'Combat' });
+  values.push({ id: 'initiative', label: 'Initiative', kind: 'calc', formula: 'dex_mod', group: 'Combat' });
+  values.push({ id: 'hp_current', label: 'HP', kind: 'number', value: 10, group: 'Combat' });
+  values.push({ id: 'hp_max', label: 'Max HP', kind: 'number', value: 10, group: 'Combat' });
+
+  // Saving throws — raw ability mods in v1 (proficiency deferred to v1.1).
+  for (const [, , ab] of ABILITIES) {
+    values.push({ id: `save_${ab}`, label: `${ab.toUpperCase()} Save`, kind: 'calc', formula: `${ab}_mod`, group: 'Saves' });
+  }
+
+  // Skills — raw ability mods.
+  for (const [id, label, ab] of SKILLS) {
+    values.push({ id, label, kind: 'calc', formula: `${ab}_mod`, group: 'Skills' });
+  }
+
+  // Example weapons demonstrating the roll model.
+  values.push({ id: 'longsword', label: 'Longsword', kind: 'text', text: 'Longsword', roll: '1d8 + str_mod', description: 'Versatile (1d10). Melee, 5 ft.', group: 'Attacks' });
+  values.push({ id: 'shortbow', label: 'Shortbow', kind: 'text', text: 'Shortbow', roll: '1d6 + dex_mod', description: 'Ranged, 80/320 ft.', group: 'Attacks' });
+
+  const w = (o) => ({ kind: 'bound', cols: 1, rows: 1, tap: 'none', ...o, id: newId('w') });
+
+  const pages = [
+    {
+      id: newId('page'), name: 'Core',
+      widgets: [
+        w({ ref: 'char_class', secondaryRef: 'level', cols: 2, tap: 'none' }),
+        w({ ref: 'strength', secondaryRef: 'str_mod', tap: 'roll', rollOverride: '1d20 + str_mod' }),
+        w({ ref: 'dexterity', secondaryRef: 'dex_mod', tap: 'roll', rollOverride: '1d20 + dex_mod' }),
+        w({ ref: 'constitution', secondaryRef: 'con_mod', tap: 'roll', rollOverride: '1d20 + con_mod' }),
+        w({ ref: 'intelligence', secondaryRef: 'int_mod', tap: 'roll', rollOverride: '1d20 + int_mod' }),
+        w({ ref: 'wisdom', secondaryRef: 'wis_mod', tap: 'roll', rollOverride: '1d20 + wis_mod' }),
+        w({ ref: 'charisma', secondaryRef: 'cha_mod', tap: 'roll', rollOverride: '1d20 + cha_mod' }),
+        w({ ref: 'proficiency_bonus', tap: 'detail' }),
+        w({ ref: 'armor_class', tap: 'detail' }),
+        w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, tap: 'none' }),
+      ],
+    },
+    {
+      id: newId('page'), name: 'Combat',
+      widgets: [
+        w({ ref: 'armor_class', tap: 'detail' }),
+        w({ ref: 'initiative', tap: 'roll', rollOverride: '1d20 + initiative' }),
+        w({ ref: 'hp_current', secondaryRef: 'hp_max', cols: 2, tap: 'none' }),
+        w({ kind: 'label', title: 'Saving Throws', cols: 2 }),
+        w({ ref: 'save_str', tap: 'roll', rollOverride: '1d20 + save_str' }),
+        w({ ref: 'save_dex', tap: 'roll', rollOverride: '1d20 + save_dex' }),
+        w({ ref: 'save_con', tap: 'roll', rollOverride: '1d20 + save_con' }),
+        w({ ref: 'save_wis', tap: 'roll', rollOverride: '1d20 + save_wis' }),
+        w({ kind: 'label', title: 'Attacks', cols: 2 }),
+        w({ ref: 'longsword', cols: 2, tap: 'roll' }),
+        w({ ref: 'shortbow', cols: 2, tap: 'roll' }),
+      ],
+    },
+    {
+      id: newId('page'), name: 'Skills',
+      widgets: [
+        w({ kind: 'label', title: 'Skills (roll a check)', cols: 2 }),
+        ...SKILLS.map(([id]) => w({ ref: id, tap: 'roll', rollOverride: `1d20 + ${id}` })),
+      ],
+    },
+  ];
+
+  return {
+    id: newId('char'),
+    name,
+    preset: 'dnd5e',
+    createdAt: new Date().toISOString(),
+    values,
+    pages,
+  };
+}
+
+function blankCharacter(name = 'New Character') {
+  return {
+    id: newId('char'),
+    name,
+    preset: 'blank',
+    createdAt: new Date().toISOString(),
+    values: [{ id: 'notes', label: 'Notes', kind: 'text', text: '', group: 'General' }],
+    pages: [{ id: newId('page'), name: 'Page 1', widgets: [{ id: newId('w'), kind: 'bound', ref: 'notes', cols: 2, rows: 3, tap: 'none' }] }],
+  };
+}
+
+// ===== store.js =====
+// Persistence & sharing (SPEC §7). Local save-file blob + JSON export/import.
+
+const KEY = 'parchment.savefile.v1';
+const SCHEMA_VERSION = 1;
+
+function emptySave() {
+  return { schemaVersion: SCHEMA_VERSION, exportedAt: null, activeCharacterId: null, characters: [] };
+}
+
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (!raw) return emptySave();
+    const data = JSON.parse(raw);
+    if (!data.characters) return emptySave();
+    return data;
+  } catch {
+    return emptySave();
+  }
+}
+
+let saveTimer = null;
+function save(state) {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch (e) {
+      console.error('Autosave failed', e);
+    }
+  }, 250);
+}
+
+// Immediate synchronous write — use for destructive/structural changes so a
+// quick reload can't lose them (the debounced save() may not have fired yet).
+function saveNow(state) {
+  clearTimeout(saveTimer);
+  try {
+    localStorage.setItem(KEY, JSON.stringify(state));
+  } catch (e) {
+    console.error('Save failed', e);
+  }
+}
+
+// --- Export ---------------------------------------------------------------
+function stamp(char) {
+  const slug = (char?.name || 'parchment').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  const date = new Date().toISOString().slice(0, 10);
+  return `${slug}-${date}`;
+}
+
+function exportCharacter(char) {
+  const blob = { schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), activeCharacterId: char.id, characters: [char] };
+  return { filename: `parchment-${stamp(char)}.json`, json: JSON.stringify(blob, null, 2) };
+}
+
+function exportEverything(state) {
+  const blob = { ...state, exportedAt: new Date().toISOString() };
+  return { filename: `parchment-backup-${new Date().toISOString().slice(0, 10)}.json`, json: JSON.stringify(blob, null, 2) };
+}
+
+// A pack: values (and optionally a page). Here we export one character's
+// values + all its pages as a portable layout+values pack.
+function exportPack(char, name = char.name) {
+  const pack = {
+    kind: 'pack',
+    name,
+    createdWith: 'parchment/0.1',
+    values: char.values,
+    pages: char.pages,
+  };
+  return { filename: `parchment-pack-${stamp({ name })}.json`, json: JSON.stringify(pack, null, 2) };
+}
+
+function download(filename, json) {
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// --- Import ---------------------------------------------------------------
+// Returns { type, warnings, apply(state) } — apply mutates a copy and returns it.
+function analyzeImport(data) {
+  if (data && data.schemaVersion && data.schemaVersion > SCHEMA_VERSION) {
+    return { type: 'refused', reason: `File schema v${data.schemaVersion} is newer than this app (v${SCHEMA_VERSION}). Update the app first.` };
+  }
+  if (data && data.kind === 'pack') return { type: 'pack', pack: data };
+  if (data && Array.isArray(data.characters)) return { type: 'savefile', save: data };
+  return { type: 'invalid', reason: 'Unrecognised file — not a Parchment save file or pack.' };
+}
+
+// Import a save file: add all characters, never overwrite; reassign ids on collision.
+function importSaveFile(state, incoming) {
+  const existing = new Set(state.characters.map((c) => c.id));
+  const added = [];
+  for (const c of incoming.characters) {
+    let char = c;
+    if (existing.has(c.id)) char = { ...c, id: newId('char'), name: c.name };
+    existing.add(char.id);
+    state.characters.push(char);
+    added.push(char.id);
+  }
+  if (!state.activeCharacterId && added.length) state.activeCharacterId = added[0];
+  return { added };
+}
+
+// Import a pack into a character, non-destructively (SPEC §7.3).
+// On value-id collision, import under a suffixed id and rewrite references
+// inside the pack's own formulas/rolls/widgets so it stays internally consistent.
+function importPackInto(char, pack, { mode = 'suffix', addPages = true } = {}) {
+  const existing = new Set(char.values.map((v) => v.id));
+  const rename = new Map();
+  const incoming = [];
+
+  for (const v of pack.values) {
+    if (!existing.has(v.id)) { incoming.push(v); existing.add(v.id); continue; }
+    if (mode === 'skip') continue;
+    // suffix
+    let i = 2, nid = `${v.id}_${i}`;
+    while (existing.has(nid)) { i++; nid = `${v.id}_${i}`; }
+    rename.set(v.id, nid);
+    existing.add(nid);
+    incoming.push({ ...v, id: nid });
+  }
+
+  const rewrite = (expr) => {
+    if (!expr) return expr;
+    let out = expr;
+    for (const [from, to] of rename) out = out.replace(new RegExp(`\\b${from}\\b`, 'g'), to);
+    return out;
+  };
+  for (const v of incoming) {
+    if (v.formula) v.formula = rewrite(v.formula);
+    if (v.roll) v.roll = rewrite(v.roll);
+  }
+
+  char.values.push(...incoming);
+
+  if (addPages && Array.isArray(pack.pages)) {
+    for (const p of pack.pages) {
+      const page = {
+        id: newId('page'),
+        name: p.name || 'Imported',
+        widgets: (p.widgets || []).map((w) => ({
+          ...w,
+          id: newId('w'),
+          ref: rename.get(w.ref) || w.ref,
+          secondaryRef: rename.get(w.secondaryRef) || w.secondaryRef,
+          rollOverride: rewrite(w.rollOverride),
+        })),
+      };
+      char.pages.push(page);
+    }
+  }
+  return { addedValues: incoming.length, renamed: rename.size };
+}
+
+
+const store = { SCHEMA_VERSION, emptySave, load, save, saveNow, exportCharacter,
+  exportEverything, exportPack, download, analyzeImport, importSaveFile, importPackInto };
+
+// ===== app.js =====
+// Parchment — app shell & UI (SPEC groups A/B/C). Vanilla JS, no framework.
+
+// --- tiny DOM helper -------------------------------------------------------
+function el(tag, props = {}, children = []) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === 'class') node.className = v;
+    else if (k === 'html') node.innerHTML = v;
+    else if (k === 'text') node.textContent = v;
+    else if (k.startsWith('on') && typeof v === 'function') node.addEventListener(k.slice(2), v);
+    else if (v === true) node.setAttribute(k, '');
+    else if (v !== false && v != null) node.setAttribute(k, v);
+  }
+  for (const c of [].concat(children)) if (c != null && c !== false) node.append(c.nodeType ? c : document.createTextNode(c));
+  return node;
+}
+const $ = (sel) => document.querySelector(sel);
+
+// --- state -----------------------------------------------------------------
+const state = {
+  save: store.load(),
+  view: 'home',        // 'home' | 'sheet'
+  mode: 'play',        // 'play' | 'edit'
+  pageIndex: 0,
+  overlay: null,       // { type, ... }
+  toast: null,
+};
+
+function activeChar() {
+  return state.save.characters.find((c) => c.id === state.save.activeCharacterId) || null;
+}
+function commit() {
+  store.save(state.save);
+  render();
+}
+// Like commit(), but writes synchronously — for deletes and other destructive
+// changes that must survive an immediate reload.
+function commitNow() {
+  store.saveNow(state.save);
+  render();
+}
+function toast(msg) {
+  state.toast = msg;
+  render();
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { state.toast = null; render(); }, 1800);
+}
+
+// Computed-value cache for the active character (recomputed each render; the
+// kernel is fast and calc results are never persisted — SPEC §6.3).
+let computed = { results: new Map(), details: new Map() };
+function recompute() {
+  const c = activeChar();
+  computed = c ? computeAll(c.values) : { results: new Map(), details: new Map() };
+}
+function valueById(id) { return activeChar()?.values.find((v) => v.id === id); }
+
+// --- render dispatch -------------------------------------------------------
+function render() {
+  recompute();
+  const app = $('#app');
+  app.innerHTML = '';
+  // Overlays/toasts live on <body>, not inside #app — clear the stale ones so
+  // closing an overlay actually removes it (and re-renders don't stack copies).
+  document.querySelectorAll('body > .scrim, body > .toast').forEach((n) => n.remove());
+  const frame = el('div', { class: `frame ${state.mode === 'edit' && state.view === 'sheet' ? 'edit' : ''}` });
+  if (state.view === 'home' || !activeChar()) frame.append(renderHome());
+  else frame.append(...renderSheet());
+  app.append(frame);
+  if (state.overlay) document.body.append(renderOverlay());
+  if (state.toast) document.body.append(el('div', { class: 'toast', text: state.toast }));
+}
+
+// ======================================================================= HOME
+function renderHome() {
+  const wrap = el('div', { class: 'home' });
+  wrap.append(el('h1', { text: 'Parchment' }));
+  wrap.append(el('p', { class: 'tagline', text: 'Your character sheets — on paper, offline.' }));
+  wrap.append(el('div', { class: 'warnbanner' }, [
+    el('span', { text: '⚠' }),
+    el('span', { text: 'Characters live only in this browser. Clearing site data erases them — export a JSON backup to keep them safe.' }),
+  ]));
+
+  if (!state.save.characters.length) {
+    wrap.append(el('div', { class: 'empty', text: 'No characters yet. Tap + New to begin.' }));
+  }
+  for (const c of state.save.characters) {
+    const active = c.id === state.save.activeCharacterId;
+    const level = c.values.find((v) => v.id === 'level')?.value;
+    const row = el('div', { class: `charrow ${active ? 'active' : ''}`, onclick: () => openCharacter(c.id) }, [
+      el('div', { class: 'activedot' }),
+      el('div', { class: 'cmeta' }, [
+        el('div', { class: 'cname', text: c.name }),
+        el('div', { class: 'csub' }, [
+          el('span', { class: 'pill', text: c.preset || 'custom' }),
+          level != null ? el('span', { text: `  Level ${level}` }) : null,
+        ]),
+      ]),
+      el('button', { class: 'rowdel', title: `Delete ${c.name}`, onclick: (e) => { e.stopPropagation(); confirmDeleteCharacter(c); } }, '🗑'),
+      el('div', { class: 'cgo', text: '›' }),
+    ]);
+    wrap.append(row);
+  }
+
+  wrap.append(el('div', { style: 'display:flex;gap:10px;margin-top:16px' }, [
+    el('button', { class: 'btn ghost', onclick: openShare, text: '↥ Share / Backup' }),
+  ]));
+
+  const container = el('div', { style: 'position:relative;flex:1;display:flex;flex-direction:column;overflow:hidden' }, [wrap]);
+  container.append(el('button', { class: 'fab', text: '+ New', onclick: openNewCharacter }));
+  return container;
+}
+
+function openCharacter(id) {
+  state.save.activeCharacterId = id;
+  state.view = 'sheet';
+  state.pageIndex = 0;
+  state.mode = 'play';
+  commit();
+}
+
+// ====================================================================== SHEET
+function renderSheet() {
+  const c = activeChar();
+  const page = c.pages[Math.min(state.pageIndex, c.pages.length - 1)] || c.pages[0];
+
+  // App bar
+  const appbar = el('div', { class: 'appbar' }, [
+    el('button', { class: 'iconbtn', text: '☰', onclick: openMenu }),
+    el('div', { class: 'name' }, [c.name, el('span', { class: 'sub', text: c.preset || 'custom' })]),
+    el('div', { class: 'toggle' }, [
+      el('button', { class: state.mode === 'play' ? 'on' : '', text: 'Play', onclick: () => { state.mode = 'play'; render(); } }),
+      el('button', { class: state.mode === 'edit' ? 'on' : '', text: 'Edit', onclick: () => { state.mode = 'edit'; render(); } }),
+    ]),
+  ]);
+
+  // Page tabs
+  const pagebar = el('div', { class: 'pagebar' });
+  c.pages.forEach((p, i) => {
+    pagebar.append(el('button', {
+      class: `tab ${i === state.pageIndex ? 'on' : ''}`, text: p.name,
+      onclick: () => { state.pageIndex = i; render(); },
+      ...(state.mode === 'edit' ? { ondblclick: () => renamePage(p) } : {}),
+    }));
+  });
+  if (state.mode === 'edit') pagebar.append(el('button', { class: 'tab add', text: '+ Page', onclick: addPage }));
+
+  // Sheet body
+  const sheet = el('div', { class: 'sheet' });
+  const grid = el('div', { class: 'grid' });
+  page.widgets.forEach((w, i) => grid.append(renderWidget(w, i, page)));
+  if (state.mode === 'edit') grid.append(el('button', { class: 'addtile', text: '+ Add widget', onclick: () => openAddWidget(page) }));
+  sheet.append(grid);
+
+  // Dots indicator
+  if (c.pages.length > 1) {
+    const dots = el('div', { class: 'dots' });
+    c.pages.forEach((_, i) => dots.append(el('div', { class: `dot ${i === state.pageIndex ? 'on' : ''}` })));
+    sheet.append(dots);
+  }
+
+  enableSwipe(sheet, c.pages.length);
+  return [appbar, pagebar, sheet];
+}
+
+function renderWidget(w, index, page) {
+  if (w.kind === 'label') {
+    const node = el('div', { class: 'wdg label c2' }, [el('div', { class: 'lbl', text: w.title || 'Section' })]);
+    if (state.mode === 'edit') decorateEdit(node, w, index, page);
+    return node;
+  }
+
+  const v = valueById(w.ref);
+  const spanClass = `${(w.cols || 1) >= 2 ? 'c2' : ''} ${w.rows === 2 ? 'r2' : w.rows >= 3 ? 'r3' : ''}`;
+  const node = el('div', { class: `wdg ${spanClass}` });
+
+  if (!v) {
+    node.append(el('div', { class: 'wl', text: w.ref || '—' }), el('div', { class: 'wv err', text: 'ERR' }));
+    if (state.mode === 'edit') decorateEdit(node, w, index, page);
+    return node;
+  }
+
+  const label = w.title || v.label;
+  node.append(el('div', { class: 'wl', text: label }));
+
+  // Display face derived from bound value kind (§9).
+  const numberHasTap = v.kind === 'number' && w.tap && w.tap !== 'none';
+  if (v.kind === 'number' && state.mode === 'play' && !numberHasTap) {
+    // No tap action → the number is directly editable inline (quick HP edits etc).
+    node.classList.add('num');
+    const input = el('input', {
+      type: 'number', value: v.value ?? 0, inputmode: 'numeric',
+      onchange: (e) => { v.value = e.target.value === '' ? 0 : Number(e.target.value); commit(); },
+    });
+    input.addEventListener('click', (e) => e.stopPropagation());
+    node.append(input);
+  } else if (numberHasTap && state.mode === 'play') {
+    // Tap is reserved for the roll/detail action; editing is via the ✎ affordance
+    // (SPEC §9: "editable inline via tap-hold or an edit affordance").
+    node.append(el('div', { class: 'wv', text: String(v.value ?? 0) }));
+    const pencil = el('button', { class: 'editnum', text: '✎', title: 'Edit value' });
+    pencil.addEventListener('click', (e) => { e.stopPropagation(); editNumberInline(node, v); });
+    node.append(pencil);
+  } else if (v.kind === 'text' && (w.rows || 1) >= 2 && state.mode === 'play' && w.tap === 'none') {
+    const ta = el('textarea', { rows: (w.rows || 2) * 2, oninput: (e) => { v.text = e.target.value; store.save(state.save); } }, []);
+    ta.value = v.text || '';
+    ta.addEventListener('click', (e) => e.stopPropagation());
+    node.append(ta);
+  } else {
+    const disp = displayValue(v);
+    node.append(el('div', { class: `wv ${v.kind === 'text' ? 'text' : ''} ${disp === 'ERR' ? 'err' : ''}`, text: disp }));
+  }
+
+  if (w.secondaryRef) {
+    const s = valueById(w.secondaryRef);
+    if (s) node.append(el('div', { class: 'ws', text: `${s.label}: ${displayValue(s)}` }));
+  }
+
+  // Tap markers
+  if (state.mode === 'play' && w.tap && w.tap !== 'none') {
+    const rollExpr = w.rollOverride || v.roll;
+    if (w.tap === 'roll' && rollExpr) node.append(el('div', { class: 'marker', text: w.rollOverride ? '⬡' : '⚔' }));
+    if (w.tap === 'detail') node.append(el('div', { class: 'marker', text: 'ⓘ' }));
+    node.classList.add('tappable');
+    node.addEventListener('click', () => {
+      if (w.tap === 'roll' && rollExpr) openRoll(v, rollExpr, label);
+      else if (w.tap === 'detail') openDetail(v, label);
+    });
+  }
+
+  if (state.mode === 'edit') decorateEdit(node, w, index, page);
+  return node;
+}
+
+function displayValue(v) {
+  if (v.kind === 'calc') { const r = computed.results.get(v.id); return r === undefined ? 'ERR' : String(r); }
+  if (v.kind === 'text') return v.text || '—';
+  return String(v.value ?? 0);
+}
+
+// Swap a read-only number face for an inline editor (used when the widget's
+// plain tap is reserved for a roll/detail action).
+function editNumberInline(node, v) {
+  const wv = node.querySelector('.wv');
+  if (!wv) return;
+  const input = el('input', { class: 'inlinenum', type: 'number', inputmode: 'numeric' });
+  input.value = v.value ?? 0;
+  wv.replaceWith(input);
+  input.focus(); input.select();
+  input.addEventListener('click', (e) => e.stopPropagation());
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); input.blur(); } });
+  input.addEventListener('blur', () => { v.value = input.value === '' ? 0 : Number(input.value); commit(); }, { once: true });
+}
+
+// --- edit-mode widget chrome ----------------------------------------------
+function decorateEdit(node, w, index, page) {
+  node.classList.add('editing');
+  node.classList.remove('num');
+  // replace any live input face with a static one in edit mode
+  const handle = el('div', { class: 'drag', text: '⠿', title: 'Drag to reorder' });
+  node.prepend(handle);
+  const size = w.cols >= 2 && w.rows >= 3 ? 'L' : w.cols >= 2 ? 'M' : 'S';
+  node.append(el('div', { class: 'editrow' }, [
+    el('span', { class: 'szchip', text: size }),
+    el('button', { class: 'cfg', text: 'Edit', onclick: (e) => { e.stopPropagation(); openWidgetConfig(w, page); } }),
+  ]));
+  enableDragReorder(node, handle, index, page);
+}
+
+// --- pointer-based drag reorder (works on touch + mouse) -------------------
+let drag = null;
+function enableDragReorder(node, handle, index, page) {
+  handle.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    drag = { page, from: index, node };
+    node.classList.add('dragging');
+    const move = (ev) => {
+      const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.wdg');
+      document.querySelectorAll('.wdg.dragover').forEach((n) => n.classList.remove('dragover'));
+      if (target && target !== node) target.classList.add('dragover');
+    };
+    const up = (ev) => {
+      document.removeEventListener('pointermove', move);
+      document.removeEventListener('pointerup', up);
+      const target = document.elementFromPoint(ev.clientX, ev.clientY)?.closest('.wdg');
+      const cards = [...node.parentNode.querySelectorAll('.wdg')];
+      const to = target ? cards.indexOf(target) : -1;
+      if (to >= 0 && to !== index) {
+        const [moved] = page.widgets.splice(index, 1);
+        page.widgets.splice(to, 0, moved);
+        commit();
+      } else { node.classList.remove('dragging'); render(); }
+      drag = null;
+    };
+    document.addEventListener('pointermove', move);
+    document.addEventListener('pointerup', up);
+  });
+}
+
+// --- horizontal page swipe -------------------------------------------------
+function enableSwipe(sheet, pageCount) {
+  let x0 = null, y0 = null;
+  sheet.addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; y0 = e.touches[0].clientY; }, { passive: true });
+  sheet.addEventListener('touchend', (e) => {
+    if (x0 == null) return;
+    const dx = e.changedTouches[0].clientX - x0;
+    const dy = e.changedTouches[0].clientY - y0;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) {
+      if (dx < 0 && state.pageIndex < pageCount - 1) { state.pageIndex++; render(); }
+      else if (dx > 0 && state.pageIndex > 0) { state.pageIndex--; render(); }
+    }
+    x0 = null;
+  }, { passive: true });
+}
+
+// ==================================================================== OVERLAYS
+function closeOverlay() { state.overlay = null; render(); }
+function renderOverlay() {
+  const o = state.overlay;
+  const scrim = el('div', { class: `scrim ${o.center ? 'center' : ''}`, onclick: (e) => { if (e.target === scrim) closeOverlay(); } });
+  scrim.append(o.render());
+  return scrim;
+}
+function sheetCard(children) { return el('div', { class: 'sheetcard' }, children); }
+
+// Reusable styled confirmation dialog (replaces native confirm()).
+function confirmDialog({ title, message, confirmLabel = 'Confirm', onConfirm }) {
+  state.overlay = {
+    center: true,
+    render: () => sheetCard([
+      el('h2', { text: title }),
+      el('p', { class: 'desc', text: message }),
+      el('div', { class: 'btnrow' }, [
+        el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay }),
+        el('button', { class: 'btn destruct', text: confirmLabel, onclick: () => onConfirm() }),
+      ]),
+    ]),
+  };
+  render();
+}
+
+// A2 — Roll result
+function openRoll(v, expr, label) {
+  const doRoll = () => evalRoll(expr, (name) => {
+    const r = computed.results.get(name);
+    if (typeof r === 'number') return r;
+    throw new Error(`bad ref ${name}`);
+  });
+  let result;
+  try { result = doRoll(); } catch { result = { total: 'ERR', display: 'unknown reference', parts: [] }; }
+  state.overlay = {
+    center: true,
+    render() {
+      let res = result;
+      const bigEl = el('div', { class: 'rollbig', text: res.total });
+      const breakEl = el('div', { class: 'rollbreak', html: formatBreak(res) });
+      const rerender = () => { try { res = doRoll(); } catch { res = { total: 'ERR', display: '—', parts: [] }; } bigEl.textContent = res.total; breakEl.innerHTML = formatBreak(res); };
+      return sheetCard([
+        el('h2', { text: `${label} — Roll` }),
+        el('p', { class: 'desc', text: expr }),
+        bigEl, breakEl,
+        el('div', { class: 'btnrow' }, [
+          el('button', { class: 'btn primary', text: '↻ Roll again', onclick: rerender }),
+          el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay }),
+        ]),
+      ]);
+    },
+  };
+  render();
+}
+function formatBreak(res) {
+  if (!res.parts || !res.parts.length) return res.display || '—';
+  const segs = res.parts.map((p) => p.rolls ? `${p.label} <b>(${p.rolls.join('+')})</b>` : `${p.label} <b>(${p.value})</b>`);
+  return `${segs.join('<span class="op"> + </span>')}<span class="op"> = </span><b>${res.total}</b>`;
+}
+
+// A3 — Detail (calc / description)
+function openDetail(v, label) {
+  state.overlay = {
+    center: true,
+    render() {
+      const kids = [el('h2', { text: label })];
+      if (v.kind === 'calc') {
+        const det = computed.details.get(v.id) || {};
+        const result = computed.results.get(v.id);
+        if (det.error) kids.push(el('div', { class: 'formula' }, [el('span', { class: 'err', text: `ERR — ${det.error}` })]));
+        else kids.push(el('div', { class: 'formula', text: `= ${v.formula}  →  ${result}` }));
+      }
+      if (v.description) kids.push(el('p', { class: 'desc', style: 'margin-top:12px', text: v.description }));
+      if (v.kind !== 'calc' && !v.description) kids.push(el('p', { class: 'desc', text: 'No details.' }));
+      kids.push(el('div', { class: 'btnrow' }, [el('button', { class: 'btn primary', text: 'Close', onclick: closeOverlay })]));
+      return sheetCard(kids);
+    },
+  };
+  render();
+}
+
+// --- Menu ------------------------------------------------------------------
+function openMenu() {
+  state.overlay = {
+    render: () => sheetCard([
+      el('h2', { text: 'Menu' }),
+      el('div', { class: 'menu-list' }, [
+        el('button', { onclick: () => { closeOverlay(); state.view = 'home'; render(); } }, [el('span', { class: 'mi', text: '⌂' }), 'Characters']),
+        el('button', { onclick: () => { closeOverlay(); openShare(); } }, [el('span', { class: 'mi', text: '↥' }), 'Share & backup']),
+        el('button', { onclick: () => { closeOverlay(); state.mode = state.mode === 'edit' ? 'play' : 'edit'; render(); } }, [el('span', { class: 'mi', text: '✎' }), state.mode === 'edit' ? 'Exit edit mode' : 'Edit this sheet']),
+        el('button', { class: 'danger', onclick: () => { const c = activeChar(); if (c) confirmDeleteCharacter(c); } }, [el('span', { class: 'mi', text: '🗑' }), 'Delete character']),
+      ]),
+      el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay })]),
+    ]),
+  };
+  render();
+}
+
+function confirmDeleteCharacter(c) {
+  confirmDialog({
+    title: `Delete “${c.name}”?`,
+    message: 'This permanently removes the character from this device and cannot be undone. Export a backup first if you might want it back.',
+    confirmLabel: '🗑 Delete character',
+    onConfirm: () => deleteCharacter(c.id),
+  });
+}
+function deleteCharacter(id) {
+  const wasActive = state.save.activeCharacterId === id;
+  state.save.characters = state.save.characters.filter((x) => x.id !== id);
+  if (wasActive) { state.save.activeCharacterId = state.save.characters[0]?.id || null; state.view = 'home'; }
+  state.overlay = null;
+  commitNow();
+}
+
+// ============================================================ NEW CHARACTER (C2)
+function openNewCharacter() {
+  let name = '';
+  let start = 'dnd5e';
+  state.overlay = {
+    render() {
+      const nameInput = el('input', { placeholder: 'e.g. Thordak', value: name, oninput: (e) => { name = e.target.value; } });
+      const pick = (val) => { start = val; render(); };
+      return sheetCard([
+        el('h2', { text: 'New character' }),
+        el('div', { class: 'field' }, [el('label', { text: 'Name' }), nameInput]),
+        el('div', { class: 'field' }, [
+          el('label', { text: 'Start from' }),
+          el('div', { class: 'seg' }, [
+            el('button', { class: start === 'dnd5e' ? 'on' : '', text: '● D&D 5e preset', onclick: () => pick('dnd5e') }),
+            el('button', { class: start === 'blank' ? 'on' : '', text: '○ Blank', onclick: () => pick('blank') }),
+          ]),
+          el('div', { class: 'hint', text: start === 'dnd5e' ? 'Full 5e sheet — abilities, saves, skills, attacks. Editable after.' : 'An empty sheet with a single notes widget.' }),
+        ]),
+        el('div', { class: 'btnrow' }, [
+          el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay }),
+          el('button', { class: 'btn primary', text: 'Create', onclick: () => {
+            const nm = name.trim() || (start === 'dnd5e' ? 'New Hero' : 'New Character');
+            const c = start === 'dnd5e' ? dnd5eCharacter(nm) : blankCharacter(nm);
+            state.save.characters.push(c);
+            state.save.activeCharacterId = c.id;
+            state.overlay = null; state.view = 'sheet'; state.pageIndex = 0; state.mode = 'play';
+            commit();
+          } }),
+        ]),
+      ]);
+    },
+  };
+  render();
+}
+
+// ================================================================ PAGES (edit)
+function addPage() {
+  const c = activeChar();
+  const name = prompt('New page name?', `Page ${c.pages.length + 1}`);
+  if (name == null) return;
+  c.pages.push({ id: newId('page'), name: name.trim() || `Page ${c.pages.length + 1}`, widgets: [] });
+  state.pageIndex = c.pages.length - 1;
+  commit();
+}
+function renamePage(p) {
+  const c = activeChar();
+  const choice = prompt(`Rename page "${p.name}" (or type DELETE to remove it):`, p.name);
+  if (choice == null) return;
+  if (choice.trim().toUpperCase() === 'DELETE') {
+    if (c.pages.length <= 1) { toast('A character needs at least one page.'); return; }
+    c.pages = c.pages.filter((x) => x.id !== p.id);
+    state.pageIndex = 0;
+  } else {
+    p.name = choice.trim() || p.name;
+  }
+  commit();
+}
+
+// ============================================================ ADD WIDGET (B4)
+function openAddWidget(page) {
+  let query = '';
+  state.overlay = {
+    render() {
+      const c = activeChar();
+      const matches = c.values.filter((v) => (v.label + ' ' + v.id).toLowerCase().includes(query.toLowerCase()));
+      const list = el('div', { class: 'menu-list' });
+      matches.slice(0, 30).forEach((v) => list.append(el('button', {
+        onclick: () => { page.widgets.push({ id: newId('w'), kind: 'bound', ref: v.id, cols: 1, rows: 1, tap: v.roll ? 'roll' : v.kind === 'calc' ? 'detail' : 'none' }); state.overlay = null; commit(); },
+      }, [el('span', { class: 'mi', text: v.kind === 'calc' ? 'ƒ' : v.kind === 'text' ? 'T' : '#' }), `${v.label}  `, el('span', { class: 'pill', text: v.id })])));
+      if (!matches.length) list.append(el('div', { class: 'empty', text: 'No values match.' }));
+
+      return sheetCard([
+        el('h2', { text: 'Add widget' }),
+        el('div', { class: 'field' }, [el('input', { placeholder: 'Search values…', value: query, oninput: (e) => { query = e.target.value; render(); } })]),
+        el('div', { class: 'btnrow', style: 'margin-bottom:10px' }, [
+          el('button', { class: 'btn ghost', text: '+ New value', onclick: () => openValueEditor(null, (v) => { page.widgets.push({ id: newId('w'), kind: 'bound', ref: v.id, cols: 1, rows: 1, tap: v.roll ? 'roll' : v.kind === 'calc' ? 'detail' : 'none' }); }) }),
+          el('button', { class: 'btn ghost', text: '+ Label', onclick: () => { const t = prompt('Label text?', 'Section'); if (t != null) { page.widgets.push({ id: newId('w'), kind: 'label', title: t || 'Section', cols: 2 }); state.overlay = null; commit(); } } }),
+        ]),
+        list,
+        el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay })]),
+      ]);
+    },
+  };
+  render();
+}
+
+// =========================================================== WIDGET CONFIG (B2)
+function openWidgetConfig(w, page) {
+  state.overlay = {
+    render() {
+      const c = activeChar();
+      const v = valueById(w.ref);
+      const size = w.cols >= 2 && w.rows >= 3 ? 'L' : w.cols >= 2 ? 'M' : 'S';
+      const setSize = (s) => { if (s === 'S') { w.cols = 1; w.rows = 1; } else if (s === 'M') { w.cols = 2; w.rows = 1; } else { w.cols = 2; w.rows = 3; } commit(); };
+      const valueOptions = (sel, allowNone) => el('select', {
+        onchange: (e) => sel(e.target.value || undefined),
+      }, [
+        allowNone ? el('option', { value: '', text: '— none —' }) : null,
+        ...c.values.map((vv) => el('option', { value: vv.id, text: `${vv.label} (${vv.id})`, ...(0) })),
+      ]);
+
+      if (w.kind === 'label') {
+        return sheetCard([
+          el('h2', { text: 'Label widget' }),
+          el('div', { class: 'field' }, [el('label', { text: 'Text' }), el('input', { value: w.title || '', oninput: (e) => { w.title = e.target.value; store.save(state.save); } })]),
+          el('div', { class: 'btnrow' }, [
+            el('button', { class: 'btn danger', text: 'Remove', onclick: () => removeWidget(w, page) }),
+            el('button', { class: 'btn primary', text: 'Done', onclick: () => { closeOverlay(); } }),
+          ]),
+        ]);
+      }
+
+      const refSel = valueOptions((id) => { w.ref = id; commit(); }, false);
+      refSel.value = w.ref || '';
+      const secSel = valueOptions((id) => { w.secondaryRef = id; commit(); }, true);
+      secSel.value = w.secondaryRef || '';
+
+      return sheetCard([
+        el('h2', { text: 'Configure widget' }),
+        el('p', { class: 'desc', text: v ? `Display face follows the bound value's kind (${v.kind}).` : 'Bind this widget to a value.' }),
+        el('div', { class: 'field' }, [el('label', { text: 'Bound value (ref)' }), refSel]),
+        el('div', { class: 'field' }, [el('label', { text: 'Secondary value (optional)' }), secSel]),
+        el('div', { class: 'field' }, [
+          el('label', { text: 'Size' }),
+          el('div', { class: 'seg small' }, ['S', 'M', 'L'].map((s) => el('button', { class: size === s ? 'on' : '', text: s, onclick: () => setSize(s) }))),
+        ]),
+        el('div', { class: 'field' }, [
+          el('label', { text: 'Tap action' }),
+          el('div', { class: 'seg small' }, ['none', 'detail', 'roll'].map((t) => el('button', { class: (w.tap || 'none') === t ? 'on' : '', text: t, onclick: () => { w.tap = t; commit(); } }))),
+        ]),
+        el('div', { class: 'field' }, [
+          el('label', { text: 'Roll override (else uses value.roll)' }),
+          el('input', { placeholder: v?.roll ? `inherits: ${v.roll}` : 'e.g. 1d20 + str_mod', value: w.rollOverride || '', oninput: (e) => { w.rollOverride = e.target.value || undefined; store.save(state.save); } }),
+          el('div', { class: 'hint', text: 'rollOverride wins; otherwise the bound value’s own roll is used.' }),
+        ]),
+        el('div', { class: 'btnrow' }, [
+          el('button', { class: 'btn danger', text: 'Remove', onclick: () => removeWidget(w, page) }),
+          el('button', { class: 'btn ghost', text: 'Edit value…', onclick: () => v && openValueEditor(v) }),
+          el('button', { class: 'btn primary', text: 'Done', onclick: closeOverlay }),
+        ]),
+      ]);
+    },
+  };
+  render();
+}
+function removeWidget(w, page) {
+  page.widgets = page.widgets.filter((x) => x.id !== w.id);
+  closeOverlay(); commit();
+}
+
+// ============================================================ VALUE EDITOR (B3)
+const SLUG_RE = /^[a-z][a-z0-9_]*$/;
+function openValueEditor(existing, onCreate) {
+  const c = activeChar();
+  const creating = !existing;
+  // working copy
+  const v = existing || { id: '', label: '', kind: 'number', value: 0, text: '', formula: '', roll: '', description: '', group: '' };
+  let idDraft = v.id;
+
+  state.overlay = {
+    render() {
+      const validate = () => {
+        // live-validate the formula/roll -> show ERR hint
+        if (v.kind === 'calc') {
+          const test = computeAll([...c.values.filter((x) => x.id !== v.id), { ...v, id: v.id || '__tmp__' }]);
+          const r = test.results.get(v.id || '__tmp__');
+          const d = test.details.get(v.id || '__tmp__');
+          return r === 'ERR' ? (d?.error || 'error') : null;
+        }
+        return null;
+      };
+      const err = validate();
+
+      const idField = creating
+        ? el('input', { placeholder: 'lowercase_slug', value: idDraft, oninput: (e) => { idDraft = e.target.value; } })
+        : el('input', { class: 'locked', value: v.id, readonly: true, title: 'Value ids are immutable — formulas reference them.' });
+
+      const kindSeg = el('div', { class: 'seg' }, ['number', 'text', 'calc'].map((k) => el('button', { class: v.kind === k ? 'on' : '', text: k, onclick: () => { v.kind = k; render(); } })));
+
+      const kindFields = el('div');
+      if (v.kind === 'number') kindFields.append(field('Value', el('input', { type: 'number', value: v.value ?? 0, oninput: (e) => { v.value = Number(e.target.value); } })));
+      if (v.kind === 'text') kindFields.append(field('Text', el('input', { value: v.text || '', oninput: (e) => { v.text = e.target.value; } })));
+      if (v.kind === 'calc') kindFields.append(field('Formula (no dice)', el('input', { value: v.formula || '', placeholder: '10 + dex_mod', oninput: (e) => { v.formula = e.target.value; render(); } }), err ? `ERR — ${err}` : 'Deterministic. Other values may depend on this.'));
+
+      return sheetCard([
+        el('h2', { text: creating ? 'New value' : 'Edit value' }),
+        field(creating ? 'ID (slug, permanent)' : 'ID (locked)', idField, creating ? 'Lowercase, starts with a letter. Cannot change later.' : 'Immutable — rename the label instead.'),
+        field('Label', el('input', { value: v.label || '', placeholder: 'Display name', oninput: (e) => { v.label = e.target.value; } })),
+        field('Kind', kindSeg),
+        kindFields,
+        field('Roll (optional, dice allowed)', el('input', { value: v.roll || '', placeholder: '1d20 + str_mod', oninput: (e) => { v.roll = e.target.value; } }), 'A tappable dice expression. Nothing may depend on it.'),
+        field('Description (shown on detail)', el('input', { value: v.description || '', oninput: (e) => { v.description = e.target.value; } })),
+        field('Group (editor organisation)', el('input', { value: v.group || '', oninput: (e) => { v.group = e.target.value; } })),
+        el('div', { class: 'btnrow' }, [
+          !creating ? el('button', { class: 'btn danger', text: 'Delete', onclick: () => deleteValue(v) }) : null,
+          el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay }),
+          el('button', { class: 'btn primary', text: 'Save', onclick: () => saveValue() }),
+        ]),
+      ]);
+
+      function saveValue() {
+        // normalise empties
+        if (v.kind !== 'number') v.value = undefined;
+        if (v.kind !== 'text') v.text = v.kind === 'text' ? v.text : undefined;
+        if (v.kind !== 'calc') v.formula = undefined;
+        if (!v.roll) delete v.roll;
+        if (creating) {
+          const id = (idDraft || '').trim();
+          if (!SLUG_RE.test(id)) { toast('ID must be a lowercase slug (a–z, 0–9, _).'); return; }
+          if (c.values.some((x) => x.id === id)) { toast(`ID "${id}" already exists.`); return; }
+          v.id = id;
+          if (!v.label) v.label = id;
+          c.values.push(v);
+          state.overlay = null;
+          commit();
+          if (onCreate) { onCreate(v); }
+          return;
+        }
+        closeOverlay(); commit();
+      }
+    },
+  };
+  render();
+}
+function field(label, input, hint) {
+  return el('div', { class: 'field' }, [el('label', { text: label }), input, hint ? el('div', { class: `hint ${/^ERR/.test(hint) ? 'err' : ''}`, text: hint }) : null]);
+}
+function deleteValue(v) {
+  const c = activeChar();
+  const dependents = c.values.filter((x) => x.kind === 'calc' && new RegExp(`\\b${v.id}\\b`).test(x.formula || ''));
+  confirmDialog({
+    title: `Delete value “${v.label || v.id}”?`,
+    message: dependents.length
+      ? `${dependents.length} formula(s) reference “${v.id}” and will show ERR after deletion. Widgets bound to it are removed.`
+      : 'Removes the value and any widgets bound to it. This cannot be undone.',
+    confirmLabel: '🗑 Delete value',
+    onConfirm: () => {
+      c.values = c.values.filter((x) => x.id !== v.id);
+      c.pages.forEach((p) => {
+        p.widgets = p.widgets.filter((w) => !(w.kind === 'bound' && w.ref === v.id));
+        p.widgets.forEach((w) => { if (w.secondaryRef === v.id) w.secondaryRef = undefined; });
+      });
+      closeOverlay(); commitNow();
+    },
+  });
+}
+
+// ============================================================ SHARE / IMPORT (C3/C4)
+function openShare() {
+  state.overlay = {
+    render() {
+      const c = activeChar();
+      const items = [];
+      if (c) {
+        items.push(el('button', { onclick: () => { const { filename, json } = store.exportCharacter(c); store.download(filename, json); toast('Character exported.'); } }, [el('span', { class: 'mi', text: '☺' }), `Export “${c.name}”`]));
+        items.push(el('button', { onclick: () => { const { filename, json } = store.exportPack(c, c.name); store.download(filename, json); toast('Pack exported.'); } }, [el('span', { class: 'mi', text: '❑' }), 'Export as pack (values + layout)']));
+      }
+      items.push(el('button', { onclick: () => { const { filename, json } = store.exportEverything(state.save); store.download(filename, json); toast('Full backup exported.'); } }, [el('span', { class: 'mi', text: '⛃' }), 'Export everything (backup)']));
+      items.push(el('button', { onclick: pickImportFile }, [el('span', { class: 'mi', text: '↧' }), 'Import a .json file']));
+
+      return sheetCard([
+        el('h2', { text: 'Share & backup' }),
+        el('p', { class: 'desc', text: 'JSON files are the only backup and the share format — no server, no accounts.' }),
+        el('div', { class: 'menu-list' }, items),
+        el('div', { class: 'btnrow' }, [el('button', { class: 'btn ghost', text: 'Close', onclick: closeOverlay })]),
+      ]);
+    },
+  };
+  render();
+}
+
+function pickImportFile() {
+  const input = $('#file-input');
+  input.value = '';
+  input.onchange = () => {
+    const file = input.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let data;
+      try { data = JSON.parse(reader.result); } catch { toast('Not valid JSON.'); return; }
+      handleImport(data);
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+function handleImport(data) {
+  const analysis = store.analyzeImport(data);
+  if (analysis.type === 'refused' || analysis.type === 'invalid') { alert(analysis.reason); return; }
+
+  if (analysis.type === 'savefile') {
+    const { added } = store.importSaveFile(state.save, analysis.save);
+    state.overlay = null; state.view = 'home';
+    commit();
+    toast(`Imported ${added.length} character(s).`);
+    return;
+  }
+
+  // pack — needs a target character; show conflict-aware dialog (C4)
+  const c = activeChar();
+  if (!c) { toast('Open a character first to import a pack into it.'); return; }
+  openPackImport(c, analysis.pack);
+}
+
+function openPackImport(c, pack) {
+  // detect collisions
+  const existingIds = new Set(c.values.map((v) => v.id));
+  const collisions = pack.values.filter((v) => existingIds.has(v.id)).map((v) => v.id);
+  let mode = 'suffix';
+  state.overlay = {
+    render() {
+      return sheetCard([
+        el('h2', { text: `Import pack: ${pack.name || 'Untitled'}` }),
+        el('p', { class: 'desc', text: `${pack.values.length} value(s)${pack.pages ? `, ${pack.pages.length} page(s)` : ''} → into “${c.name}”. Non-destructive: your existing values are never overwritten.` }),
+        collisions.length ? el('div', { class: 'warnbanner' }, [el('span', { text: '⚠' }), el('span', { text: `${collisions.length} id collision(s): ${collisions.slice(0, 5).join(', ')}${collisions.length > 5 ? '…' : ''}` })]) : el('p', { class: 'desc', text: 'No id collisions.' }),
+        collisions.length ? el('div', { class: 'field' }, [
+          el('label', { text: 'On collision' }),
+          el('div', { class: 'seg small' }, [
+            el('button', { class: mode === 'suffix' ? 'on' : '', text: 'Import suffixed (id_2)', onclick: () => { mode = 'suffix'; render(); } }),
+            el('button', { class: mode === 'skip' ? 'on' : '', text: 'Skip colliding', onclick: () => { mode = 'skip'; render(); } }),
+          ]),
+        ]) : null,
+        el('div', { class: 'btnrow' }, [
+          el('button', { class: 'btn ghost', text: 'Cancel', onclick: closeOverlay }),
+          el('button', { class: 'btn primary', text: 'Import', onclick: () => {
+            const res = store.importPackInto(c, pack, { mode, addPages: true });
+            state.overlay = null; commit();
+            toast(`Added ${res.addedValues} value(s)${res.renamed ? `, ${res.renamed} renamed` : ''}.`);
+          } }),
+        ]),
+      ]);
+    },
+  };
+  render();
+}
+
+// --- boot ------------------------------------------------------------------
+if (new URLSearchParams(location.search).get('sheet') && state.save.activeCharacterId) state.view = 'sheet';
+render();
+// expose a little for console tinkering
+window.parchment = { state, store };
+
+})();
+  </script>
+</body>
+</html>

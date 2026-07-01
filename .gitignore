@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+
+# Node (only used ad-hoc for the test/build scripts; nothing is committed)
+node_modules/
+package-lock.json
+
+# Logs / scratch
+*.log
