@@ -2112,18 +2112,38 @@ const RACES_2014 = [
   { name: 'Tiefling', asi: { int: 1, cha: 2 }, speed: 30, skills: [], note: 'Darkvision, Hellish Resistance' },
 ];
 // 2024 species grant NO ability increases (those come from the background).
+// size/speed/darkvision(dv)/traits verified via dndbeyond + thegamer (darkvision
+// reconciled to 5e canon where the two sources disagreed). hpPerLevel encodes
+// Dwarven Toughness (+1 HP/level), applied on create.
 const SPECIES_2024 = [
-  { name: 'Human', asi: {}, speed: 30, skills: [], skillFlex: 1, note: 'Resourceful, Skillful (a skill), Versatile' },
-  { name: 'Elf', asi: {}, speed: 30, skills: ['perception'], note: 'Darkvision, Fey Ancestry, lineage' },
-  { name: 'Dwarf', asi: {}, speed: 30, skills: [], note: 'Darkvision 120, Dwarven Resilience' },
-  { name: 'Halfling', asi: {}, speed: 30, skills: [], note: 'Brave, Halfling Luck, Nimbleness' },
-  { name: 'Dragonborn', asi: {}, speed: 30, skills: [], note: 'Draconic ancestry, breath weapon' },
-  { name: 'Gnome', asi: {}, speed: 30, skills: [], note: 'Darkvision, Gnomish Cunning' },
-  { name: 'Orc', asi: {}, speed: 30, skills: [], note: 'Adrenaline Rush, Relentless Endurance' },
-  { name: 'Tiefling', asi: {}, speed: 30, skills: [], note: 'Fiendish Legacy, darkvision' },
-  { name: 'Goliath', asi: {}, speed: 35, skills: [], note: 'Giant Ancestry, Large Form' },
-  { name: 'Aasimar', asi: {}, speed: 30, skills: [], note: 'Celestial Resistance, Healing Hands' },
+  { name: 'Human', asi: {}, size: 'Medium', speed: 30, dv: 0, skills: [], skillFlex: 1, note: 'Resourceful (Heroic Inspiration), Skillful (one skill), Versatile (a bonus Origin feat).' },
+  { name: 'Elf', asi: {}, size: 'Medium', speed: 30, dv: 60, skills: [], note: 'Darkvision 60. Elven Lineage (spells), Fey Ancestry, Keen Senses (choose Insight/Perception/Survival), Trance.' },
+  { name: 'Dwarf', asi: {}, size: 'Medium', speed: 30, dv: 120, hpPerLevel: 1, skills: [], note: 'Darkvision 120. Dwarven Resilience (poison), Dwarven Toughness (+1 HP/level, applied), Stonecunning.' },
+  { name: 'Halfling', asi: {}, size: 'Small', speed: 30, dv: 0, skills: [], note: 'Brave, Halfling Nimbleness, Luck (reroll 1s), Naturally Stealthy.' },
+  { name: 'Dragonborn', asi: {}, size: 'Medium', speed: 30, dv: 0, skills: [], note: 'Draconic Ancestry, Breath Weapon, damage resistance, Draconic Flight at level 5.' },
+  { name: 'Gnome', asi: {}, size: 'Small', speed: 30, dv: 60, skills: [], note: 'Darkvision 60. Gnomish Cunning (adv. on INT/WIS/CHA saves), Gnomish Lineage (Forest/Rock).' },
+  { name: 'Orc', asi: {}, size: 'Medium', speed: 30, dv: 120, skills: [], note: 'Darkvision 120. Adrenaline Rush (bonus-action Dash + temp HP), Relentless Endurance.' },
+  { name: 'Tiefling', asi: {}, size: 'Medium', speed: 30, dv: 60, skills: [], note: 'Darkvision 60. Fiendish Legacy (resistance + spells), Otherworldly Presence (Thaumaturgy).' },
+  { name: 'Goliath', asi: {}, size: 'Medium', speed: 35, dv: 0, skills: [], note: 'Giant Ancestry (choose a benefit), Large Form at level 5, Powerful Build.' },
+  { name: 'Aasimar', asi: {}, size: 'Medium', speed: 30, dv: 60, skills: [], note: 'Darkvision 60. Celestial Resistance, Healing Hands, Light Bearer, Celestial Revelation at level 3.' },
 ];
+// Concise effect text for the 2024 Origin feats (from the background tables).
+// Tough and Alert are applied mechanically on create; the rest are recorded so
+// the sheet describes them rather than just naming them.
+const FEAT_TEXT = {
+  'Magic Initiate (Cleric)': 'Learn two Cleric cantrips and one 1st-level Cleric spell; cast that spell once per long rest for free (or with slots).',
+  'Magic Initiate (Druid)': 'Learn two Druid cantrips and one 1st-level Druid spell; cast that spell once per long rest for free (or with slots).',
+  'Magic Initiate (Wizard)': 'Learn two Wizard cantrips and one 1st-level Wizard spell; cast that spell once per long rest for free (or with slots).',
+  Crafter: "Proficiency with three kinds of Artisan's Tools; a 20% discount on nonmagical gear; craft faster.",
+  Skilled: 'Proficiency in any three skills or tools of your choice.',
+  Alert: 'Add your Proficiency Bonus to Initiative (applied); you can swap initiative with a willing ally.',
+  Musician: 'Proficiency with three musical instruments; grant Heroic Inspiration to allies after a rest.',
+  Tough: 'Your hit point maximum increases by 2 × your level (applied).',
+  Healer: "Use a Healer's Kit to restore hit points to a creature; stabilise a dying creature to 1 HP.",
+  Lucky: 'You have Luck Points equal to your Proficiency Bonus; spend them for Advantage or to impose Disadvantage.',
+  'Savage Attacker': "Once per turn, reroll your weapon's damage dice and use either result.",
+  'Tavern Brawler': 'Unarmed strikes deal more damage and can shove; reroll 1s on unarmed damage; proficiency with improvised weapons.',
+};
 // 2014 backgrounds grant two fixed skill proficiencies.
 const BG_2014 = [
   { name: 'Acolyte', skills: ['insight', 'religion'] }, { name: 'Charlatan', skills: ['deception', 'sleight_of_hand'] },
@@ -2252,7 +2272,9 @@ function openBuilder() {
       } else if (step === 1) {                            // Race / Species
         kids.push(el('h2', { text: data.ed === '2024' ? 'Species' : 'Race' }));
         kids.push(el('div', { class: 'pick-list' }, raceList(data).map((r) => {
-          const bonus = data.ed === '2014' ? Object.entries(r.asi).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(' ') + (r.asiFlex ? ` · +${r.asiFlex} free` : '') : 'traits only';
+          const bonus = data.ed === '2014'
+            ? Object.entries(r.asi).map(([k, v]) => `${k.toUpperCase()} +${v}`).join(' ') + (r.asiFlex ? ` · +${r.asiFlex} free` : '')
+            : `${r.size} · ${r.dv ? `Darkvision ${r.dv} ft` : 'no darkvision'}`;
           return el('button', { class: `pick ${data.race && data.race.name === r.name ? 'on' : ''}`, onclick: () => { data.race = r; data.freeSkills = []; data.flex = {}; render(); } }, [
             el('div', { class: 'pick-t', text: r.name }),
             el('div', { class: 'pick-d', text: `Speed ${r.speed} ft · ${bonus}${r.skills && r.skills.length ? ' · ' + r.skills.map((s) => SKILL_LABEL[s]).join(', ') : ''}` }),
@@ -2355,16 +2377,25 @@ function createFromBuilder(data) {
   if (data.race) set('race', { text: data.race.name });
   if (data.bg) set('background', { text: data.bg.name });
   if (data.race && data.race.speed) set('speed', { value: data.race.speed });
-  // 2024 backgrounds grant an Origin feat + a tool — recorded as text (no
-  // dedicated feat/tool system yet).
-  if (data.ed === '2024' && data.bg && data.bg.feat) {
-    set('features', { text: `Origin feat: ${data.bg.feat}` });
-    if (data.bg.tool) set('equipment', { text: `Tool proficiency: ${data.bg.tool}` });
-  }
   ABILITY_KEYS.forEach(([k, , full]) => set(full, { value: finalScore(data, k) }));
-  const hp = hpFor(data.cls.hd, abilityMod(finalScore(data, 'con')), data.level);
+
+  // Species/race traits + the 2024 Origin feat text land in Features & Traits;
+  // the tool proficiency in Equipment (no dedicated feat/tool system yet).
+  const feature = [];
+  if (data.race && data.race.note) feature.push(`${data.race.name}: ${data.race.note}`);
+  const feat = data.ed === '2024' && data.bg ? data.bg.feat : null;
+  if (feat) feature.push(`Origin feat — ${feat}: ${FEAT_TEXT[feat] || '(see the PHB).'}`);
+  if (feature.length) set('features', { text: feature.join('\n\n') });
+  if (data.ed === '2024' && data.bg && data.bg.tool) set('equipment', { text: `Tool proficiency: ${data.bg.tool}` });
+
+  // HP + the mechanically-clean bonuses: Dwarven Toughness (+1/level) and the
+  // Tough feat (+2/level). Alert adds proficiency to Initiative.
+  let hp = hpFor(data.cls.hd, abilityMod(finalScore(data, 'con')), data.level);
+  if (data.race && data.race.hpPerLevel) hp += data.race.hpPerLevel * data.level;
+  if (feat === 'Tough') hp += 2 * data.level;
   set('hp_max', { value: hp });
   set('hp_current', { value: hp });
+  if (feat === 'Alert') set('initiative', { formula: 'dex_mod + proficiency_bonus' });
   // Proficiency dots: class saving throws + all granted/chosen skills.
   data.cls.saves.forEach((ab) => set(`save_${ab}_prof`, { value: true }));
   new Set([...grantedSkills(data), ...data.classSkills, ...data.freeSkills]).forEach((id) => set(`${id}_prof`, { value: true }));
